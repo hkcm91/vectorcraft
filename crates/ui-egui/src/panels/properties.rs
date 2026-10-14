@@ -110,6 +110,11 @@ pub fn show(app: &mut VectorcraftApp, ui: &mut Ui) {
     if is_live {
         actions.push((tl!("Expand Shape"), "object.expandShape"));
     }
+    // A blend: Object › Blend › Expand and Release, where they are easy to find.
+    if matches!(first.as_ref().map(|n| &n.kind), Some(NodeKind::Blend { .. })) {
+        actions.push((tl!("Expand"), "object.blend.expand"));
+        actions.push((tl!("Release"), "object.blend.release"));
+    }
     if multi_color(app, ui.ctx()) {
         actions.push((tl!("Recolor"), "ui.recolorDialog"));
     }
