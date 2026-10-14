@@ -4774,3 +4774,16 @@ mark-style	Japanese	Japonské
 	Scallop Gate	Vroubkovaná brána
 	Dream Tunnel	Snový tunel
 	Wavy Arch	Vlnitá klenba
+# Dimension tool and its options.
+	Dimension	Kóta
+	Dimension Tool	Nástroj Kóta
+	Dimension Tool Options	Možnosti nástroje Kóta
+	Angular	Úhlová
+	Aligned	Zarovnaná
+	Precision:	Přesnost:
+	Ends:	Konce:
+	Tick	Čárka
+	Dot	Tečka
+	Line Weight:	Tloušťka čáry:
+	Font Size:	Velikost písma:
+	Show Units	Zobrazit jednotky

@@ -3932,3 +3932,18 @@ lighting	Light	光源
 	Scallop Gate	扇贝拱门
 	Dream Tunnel	梦幻隧道
 	Wavy Arch	波浪拱形
+# Dimension tool and its options.
+	Dimension	尺寸标注
+	Dimension Tool	尺寸标注工具
+	Dimension Tool Options	尺寸标注工具选项
+	Linear	线性
+	Angular	角度
+	Aligned	对齐
+	Precision:	精度：
+	Ends:	端点：
+	Arrow	箭头
+	Tick	刻痕
+	Dot	圆点
+	Line Weight:	线条粗细：
+	Font Size:	字体大小：
+	Show Units	显示单位

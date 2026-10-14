@@ -4345,3 +4345,18 @@ lighting	Light	Luce
 	Scallop Gate	Portale smerlato
 	Dream Tunnel	Tunnel da sogno
 	Wavy Arch	Arcata ondulata
+# Dimension tool and its options.
+	Dimension	Quota
+	Dimension Tool	Strumento Quota
+	Dimension Tool Options	Opzioni strumento Quota
+	Linear	Lineare
+	Angular	Angolare
+	Aligned	Allineata
+	Precision:	Precisione:
+	Ends:	Estremità:
+	Arrow	Freccia
+	Tick	Tacca
+	Dot	Punto
+	Line Weight:	Spessore linea:
+	Font Size:	Dimensione font:
+	Show Units	Mostra unità

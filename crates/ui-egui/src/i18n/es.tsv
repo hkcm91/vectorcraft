@@ -4715,3 +4715,16 @@ mark-style	Japanese	Japonesas
 	Scallop Gate	Puerta festoneada
 	Dream Tunnel	Túnel de ensueño
 	Wavy Arch	Arcada ondulada
+# Dimension tool and its options.
+	Dimension	Cota
+	Dimension Tool	Herramienta Cota
+	Dimension Tool Options	Opciones de la herramienta Cota
+	Angular	Angular
+	Aligned	Alineada
+	Precision:	Precisión:
+	Ends:	Extremos:
+	Tick	Trazo
+	Dot	Punto
+	Line Weight:	Grosor de línea:
+	Font Size:	Tamaño de fuente:
+	Show Units	Mostrar unidades

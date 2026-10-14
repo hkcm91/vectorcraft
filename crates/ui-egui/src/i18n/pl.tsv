@@ -4617,3 +4617,16 @@ mark-style	Japanese	Japońskie
 	Scallop Gate	Ząbkowana brama
 	Dream Tunnel	Senny tunel
 	Wavy Arch	Falista arkada
+# Dimension tool and its options.
+	Dimension	Wymiar
+	Dimension Tool	Narzędzie Wymiar
+	Dimension Tool Options	Opcje narzędzia Wymiar
+	Angular	Kątowy
+	Aligned	Wyrównany
+	Precision:	Dokładność:
+	Ends:	Zakończenia:
+	Tick	Kreska
+	Dot	Kropka
+	Line Weight:	Grubość linii:
+	Font Size:	Rozmiar czcionki:
+	Show Units	Pokaż jednostki

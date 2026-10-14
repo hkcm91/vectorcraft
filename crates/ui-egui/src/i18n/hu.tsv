@@ -4741,3 +4741,16 @@ imageTrace	Outline	Körvonal
 	Scallop Gate	Csipkés kapu
 	Dream Tunnel	Álomalagút
 	Wavy Arch	Hullámos boltív
+# Dimension tool and its options.
+	Dimension	Méretezés
+	Dimension Tool	Méretezés eszköz
+	Dimension Tool Options	Méretezés eszköz beállításai
+	Angular	Szög
+	Aligned	Igazított
+	Precision:	Pontosság:
+	Ends:	Végek:
+	Tick	Vonás
+	Dot	Pont
+	Line Weight:	Vonalvastagság:
+	Font Size:	Betűméret:
+	Show Units	Mértékegység megjelenítése

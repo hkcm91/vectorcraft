@@ -3783,3 +3783,18 @@ axis	Both	Ambos
 	Roundness:	Arredondamento:
 	Presets	Predefinições
 	Classic	Clássico
+# Dimension tool and its options.
+	Dimension	Cota
+	Dimension Tool	Ferramenta Cota
+	Dimension Tool Options	Opções da ferramenta Cota
+	Linear	Linear
+	Angular	Angular
+	Aligned	Alinhada
+	Precision:	Precisão:
+	Ends:	Extremidades:
+	Arrow	Seta
+	Tick	Traço
+	Dot	Ponto
+	Line Weight:	Espessura da linha:
+	Font Size:	Tamanho da fonte:
+	Show Units	Mostrar unidades

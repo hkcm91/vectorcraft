@@ -14,6 +14,7 @@ pub mod catalog;
 pub mod corners;
 pub mod cropimage;
 pub mod cut;
+pub mod dimension;
 pub mod direct;
 pub mod distort;
 pub mod draw2;
@@ -605,6 +606,7 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "type" | "areaType" | "typeOnPath" | "verticalType" | "verticalAreaType" | "verticalTypeOnPath" => Box::new(text::TypeTool::new(id)),
         "rectangle" | "roundedRectangle" | "ellipse" | "polygon" | "star" | "lineSegment" => Box::new(shape::ShapeTool::new(id)),
         "arch" => Box::new(arch::ArchTool::default()),
+        "dimension" => Box::new(dimension::DimensionTool::default()),
         // Not in the toolbar: `file.place.queue` loads it.
         "place" => Box::new(place::PlaceTool::default()),
         other => symbolism::create(other)

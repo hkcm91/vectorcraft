@@ -1747,6 +1747,8 @@ mod tests_cut;
 #[cfg(test)]
 mod tests_dashalign;
 #[cfg(test)]
+mod tests_dimension;
+#[cfg(test)]
 mod tests_distort;
 #[cfg(test)]
 mod tests_docsetup;

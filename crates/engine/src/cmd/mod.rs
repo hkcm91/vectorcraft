@@ -13,6 +13,7 @@ pub mod colortheme;
 mod create;
 mod css;
 mod cut;
+pub mod dimension;
 pub(crate) mod distortcmds;
 mod docinfo;
 mod docmenu;
@@ -202,6 +203,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(fileio::specs());
         v.extend(create::specs());
         v.extend(arch::specs());
+        v.extend(dimension::specs());
         v.extend(object::specs());
         v.extend(path::specs());
         v.extend(select::specs());

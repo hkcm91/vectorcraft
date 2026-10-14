@@ -4327,3 +4327,18 @@ theme	Appearance	Giao diện
 	Scallop Gate	Cổng răng cưa
 	Dream Tunnel	Đường hầm mơ
 	Wavy Arch	Vòm gợn sóng
+# Dimension tool and its options.
+	Dimension	Kích thước
+	Dimension Tool	Công cụ Kích thước
+	Dimension Tool Options	Tùy chọn Công cụ Kích thước
+	Linear	Tuyến tính
+	Angular	Góc
+	Aligned	Thẳng hàng
+	Precision:	Độ chính xác:
+	Ends:	Đầu mút:
+	Arrow	Mũi tên
+	Tick	Vạch
+	Dot	Chấm
+	Line Weight:	Độ dày nét:
+	Font Size:	Cỡ phông:
+	Show Units	Hiện đơn vị

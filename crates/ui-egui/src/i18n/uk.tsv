@@ -4325,3 +4325,18 @@ lighting	Light	Світло
 	Scallop Gate	Фестонна брама
 	Dream Tunnel	Казковий тунель
 	Wavy Arch	Хвиляста арка
+# Dimension tool and its options.
+	Dimension	Розмір
+	Dimension Tool	Інструмент «Розмір»
+	Dimension Tool Options	Параметри інструменту «Розмір»
+	Linear	Лінійний
+	Angular	Кутовий
+	Aligned	Паралельний
+	Precision:	Точність:
+	Ends:	Кінці:
+	Arrow	Стрілка
+	Tick	Засічка
+	Dot	Крапка
+	Line Weight:	Товщина лінії:
+	Font Size:	Розмір шрифту:
+	Show Units	Показувати одиниці

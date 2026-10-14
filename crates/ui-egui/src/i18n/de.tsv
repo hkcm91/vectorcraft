@@ -4300,3 +4300,18 @@ theme	Appearance	Erscheinungsbild
 	Scallop Gate	Muschel-Tor
 	Dream Tunnel	Traumtunnel
 	Wavy Arch	Wellen-Torbogen
+# Dimension tool and its options.
+	Dimension	Bemaßung
+	Dimension Tool	Bemaßungswerkzeug
+	Dimension Tool Options	Optionen für das Bemaßungswerkzeug
+	Linear	Linear
+	Angular	Winkel
+	Aligned	Ausgerichtet
+	Precision:	Genauigkeit:
+	Ends:	Enden:
+	Arrow	Pfeil
+	Tick	Strich
+	Dot	Punkt
+	Line Weight:	Linienstärke:
+	Font Size:	Schriftgröße:
+	Show Units	Einheiten anzeigen

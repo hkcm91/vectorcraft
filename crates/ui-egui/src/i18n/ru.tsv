@@ -4341,3 +4341,18 @@ lighting	Light	Свет
 	Scallop Gate	Фестонные ворота
 	Dream Tunnel	Сказочный тоннель
 	Wavy Arch	Волнистая арка
+# Dimension tool and its options.
+	Dimension	Размер
+	Dimension Tool	Инструмент «Размер»
+	Dimension Tool Options	Параметры инструмента «Размер»
+	Linear	Линейный
+	Angular	Угловой
+	Aligned	Параллельный
+	Precision:	Точность:
+	Ends:	Концы:
+	Arrow	Стрелка
+	Tick	Засечка
+	Dot	Точка
+	Line Weight:	Толщина линии:
+	Font Size:	Размер шрифта:
+	Show Units	Показывать единицы

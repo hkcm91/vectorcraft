@@ -62,7 +62,7 @@ pub const BASIC: &[(&str, &[&[&str]])] = &[
     ),
     ("Type", &[&["areaType", "typeOnPath", "verticalAreaType", "verticalTypeOnPath"], &["type", "verticalType", "touchType"]]),
     ("Navigate", &[&["zoom"], &["hand", "printTiling"], &["rotateView"]]),
-    ("Color", &[&["gradient", "mesh"], &["eyedropper", "measure"]]),
+    ("Color", &[&["gradient", "mesh"], &["eyedropper", "measure", "dimension"]]),
 ];
 
 pub(crate) fn tip(t: &ToolInfo) -> String {
@@ -353,6 +353,8 @@ pub fn open_options(app: &mut VectorcraftApp, tool: &str) -> Result<serde_json::
         "flare" => Ok(crate::dialogs::flare_options::open(app, None)),
         // The Arch tool: its options, which draw the next arch (OK draws none).
         "arch" => Ok(crate::dialogs::arch_options::open(app, None)),
+        // The Dimension tool: its options, which the next dimension is drawn with.
+        "dimension" => Ok(crate::dialogs::dimension_options::open(app)),
         // A double click on the Print Tiling tool puts the pages back where the placement puts them.
         "printTiling" => app.run("print.tiling.set", json!({ "reset": true })),
         // The Liquify tools: their Tool Options (the Global Brush Dimensions and the tool's own).
@@ -389,6 +391,9 @@ pub fn control_bar_options(app: &mut VectorcraftApp, ui: &mut Ui) {
         ui.separator();
         return;
     }
+    if app.session.tool_id() == vectorcraft_tools::dimension::ID {
+        return dimension_options(app, ui);
+    }
     if app.session.tool_id() != "mirrorCut" {
         return;
     }
@@ -402,6 +407,42 @@ pub fn control_bar_options(app: &mut VectorcraftApp, ui: &mut Ui) {
         if let Some((value, _)) = widgets::dropdown(ui, ("cb-tool", key), shown, &labels, 96.0).and_then(|i| choices.get(i)) {
             app.run("tool.setOption", json!({ "key": key, "value": value })).ok();
         }
+    }
+    ui.separator();
+}
+
+/// The Dimension tool's type (Linear, Angular, Radial) and a linear dimension's orientation, and
+/// a button for the rest of its options.
+fn dimension_options(app: &mut VectorcraftApp, ui: &mut Ui) {
+    use vectorcraft_tools::dimension::{ORIENTATIONS, TYPES};
+    let shown = |v: &str| -> &'static str {
+        match v {
+            "linear" => tl!("Linear"),
+            "angular" => tl!("Angular"),
+            "radial" => tl!("Radial"),
+            "auto" => tl!("Auto"),
+            "aligned" => tl!("Aligned"),
+            "horizontal" => tl!("Horizontal"),
+            "vertical" => tl!("Vertical"),
+            _ => "",
+        }
+    };
+    let t = Tokens::get(ui.ctx());
+    let opts = app.session.tool_options();
+    let kind = opts["type"].as_str().unwrap_or("linear").to_string();
+    for (key, label, values) in [("type", tl!("Type:"), &TYPES[..]), ("orientation", tl!("Orientation:"), &ORIENTATIONS[..])] {
+        if key == "orientation" && kind != "linear" {
+            continue;
+        }
+        ui.label(egui::RichText::new(label).size(12.0).color(t.text));
+        let cur = opts[key].as_str().unwrap_or_default();
+        let labels: Vec<&str> = values.iter().map(|v| shown(v)).collect();
+        if let Some(value) = widgets::dropdown_names(ui, ("cb-dimension", key), shown(cur), &labels, 96.0).and_then(|i| values.get(i)) {
+            app.run("tool.setOption", json!({ "key": key, "value": value })).ok();
+        }
+    }
+    if widgets::flat_button(ui, tl!("Options…"), 70.0).clicked() {
+        crate::dialogs::dimension_options::open(app);
     }
     ui.separator();
 }

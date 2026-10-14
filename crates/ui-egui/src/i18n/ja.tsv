@@ -4339,3 +4339,18 @@ lighting	Light	ライト
 	Scallop Gate	スカラップゲート
 	Dream Tunnel	ドリームトンネル
 	Wavy Arch	ウェーブアーチ
+# Dimension tool and its options.
+	Dimension	寸法
+	Dimension Tool	寸法ツール
+	Dimension Tool Options	寸法ツールオプション
+	Linear	直線
+	Angular	角度
+	Aligned	平行
+	Precision:	精度:
+	Ends:	端点:
+	Arrow	矢印
+	Tick	目盛り
+	Dot	点
+	Line Weight:	線幅:
+	Font Size:	フォントサイズ:
+	Show Units	単位を表示

@@ -4309,3 +4309,18 @@ lighting	Light	광원
 	Scallop Gate	가리비 게이트
 	Dream Tunnel	드림 터널
 	Wavy Arch	물결 아치
+# Dimension tool and its options.
+	Dimension	치수
+	Dimension Tool	치수 도구
+	Dimension Tool Options	치수 도구 옵션
+	Linear	선형
+	Angular	각도
+	Aligned	정렬
+	Precision:	정밀도:
+	Ends:	끝:
+	Arrow	화살표
+	Tick	눈금
+	Dot	점
+	Line Weight:	선 두께:
+	Font Size:	글꼴 크기:
+	Show Units	단위 표시

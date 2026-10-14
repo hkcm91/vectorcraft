@@ -46,6 +46,7 @@ pub fn tool_icon(name: &str) -> &'static str {
         "tool-star" => "star",
         "tool-flare" => "dc-flare",
         "tool-arch" => "dc-arch",
+        "tool-dimension" => "dc-dimension",
         "tool-brush" => "paintbrush",
         "tool-blob-brush" => "brush",
         "tool-shaper" => "shapes",

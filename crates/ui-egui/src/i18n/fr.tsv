@@ -4774,3 +4774,16 @@ theme	Appearance	Apparence
 	Scallop Gate	Porte festonnée
 	Dream Tunnel	Tunnel de rêve
 	Wavy Arch	Arche ondulée
+# Dimension tool and its options.
+	Dimension	Cote
+	Dimension Tool	Outil Cote
+	Dimension Tool Options	Options de l’outil Cote
+	Angular	Angulaire
+	Aligned	Alignée
+	Precision:	Précision :
+	Ends:	Extrémités :
+	Tick	Trait
+	Dot	Point
+	Line Weight:	Épaisseur du trait :
+	Font Size:	Corps :
+	Show Units	Afficher les unités
