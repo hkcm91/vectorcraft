@@ -7,6 +7,7 @@
 //! by the control channel and MCP, and keeps tools testable without a UI.
 #![forbid(unsafe_code)]
 
+pub mod arch;
 pub mod bbox;
 pub mod builder;
 pub mod catalog;
@@ -603,6 +604,7 @@ pub fn create(id: &str) -> Box<dyn Tool> {
         "pen" => Box::new(pen::PenTool::default()),
         "type" | "areaType" | "typeOnPath" | "verticalType" | "verticalAreaType" | "verticalTypeOnPath" => Box::new(text::TypeTool::new(id)),
         "rectangle" | "roundedRectangle" | "ellipse" | "polygon" | "star" | "lineSegment" => Box::new(shape::ShapeTool::new(id)),
+        "arch" => Box::new(arch::ArchTool::default()),
         // Not in the toolbar: `file.place.queue` loads it.
         "place" => Box::new(place::PlaceTool::default()),
         other => symbolism::create(other)

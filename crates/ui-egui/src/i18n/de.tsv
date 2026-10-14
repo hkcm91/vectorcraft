@@ -4271,3 +4271,32 @@ theme	Appearance	Erscheinungsbild
 @msg	unknown parameter `{key}`; the command takes: {keys}	unbekannter Parameter `{key}`; der Befehl akzeptiert: {keys}
 	Load EPS into Clipboard	EPS in die Zwischenablage laden
 @msg	an image of {w} × {h} pixels is too large to draw	ein Bild mit {w} × {h} Pixeln ist zu groß, um gezeichnet zu werden
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Torbogen
+	Arch Tool	Torbogen-Werkzeug
+	Arch Tool Options	Optionen für das Torbogen-Werkzeug
+	Arch Count:	Anzahl Bögen:
+	Thickness:	Stärke:
+	Segments:	Segmente:
+	Close into Rings	Zu Ringen schließen
+	Color Palette	Farbpalette
+	Add Color	Farbe hinzufügen
+	Remove Color	Farbe entfernen
+	Shuffle Colors	Farben mischen
+	Fill Style	Füllstil
+	Wide	Breit
+	Pointed	Spitz
+	Scallop	Gewellt
+	Wavy	Wellig
+	Segmented	Segmentiert
+	Flat	Flach
+	Glossy	Glänzend
+	Jelly	Gelee
+	Muted	Gedämpft
+	Pearlescent	Perlmutt
+	Classic Rainbow	Klassischer Regenbogen
+	Candy Arch	Bonbon-Torbogen
+	Double Arch	Doppelter Torbogen
+	Scallop Gate	Muschel-Tor
+	Dream Tunnel	Traumtunnel
+	Wavy Arch	Wellen-Torbogen

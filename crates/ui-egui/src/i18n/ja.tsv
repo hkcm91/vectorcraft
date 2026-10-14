@@ -4310,3 +4310,32 @@ lighting	Light	ライト
 @msg	unknown parameter `{key}`; the command takes: {keys}	`{key}` は不明なパラメーターです。このコマンドで使えるパラメーター: {keys}
 	Load EPS into Clipboard	EPS をクリップボードに読み込む
 @msg	an image of {w} × {h} pixels is too large to draw	{w} × {h} ピクセルの画像は大きすぎて描画できません
+# Arch tool and its options (a VectorCraft addition).
+	Arch	アーチ
+	Arch Tool	アーチツール
+	Arch Tool Options	アーチツールオプション
+	Arch Count:	アーチの数:
+	Thickness:	太さ:
+	Segments:	分割数:
+	Close into Rings	リングにする
+	Color Palette	カラーパレット
+	Add Color	カラーを追加
+	Remove Color	カラーを削除
+	Shuffle Colors	カラーをシャッフル
+	Fill Style	塗りのスタイル
+	Wide	ワイド
+	Pointed	尖頭
+	Scallop	スカラップ
+	Wavy	波形
+	Segmented	分割
+	Flat	フラット
+	Glossy	光沢
+	Jelly	ゼリー
+	Muted	くすみ
+	Pearlescent	パール
+	Classic Rainbow	クラシックレインボー
+	Candy Arch	キャンディアーチ
+	Double Arch	ダブルアーチ
+	Scallop Gate	スカラップゲート
+	Dream Tunnel	ドリームトンネル
+	Wavy Arch	ウェーブアーチ

@@ -4298,3 +4298,32 @@ theme	Appearance	Giao diện
 @msg	{tool} isn't in a toolbar group of several tools	{tool} không nằm trong nhóm thanh công cụ có nhiều công cụ
 	Load EPS into Clipboard	Tải EPS vào bảng tạm
 @msg	an image of {w} × {h} pixels is too large to draw	ảnh {w} × {h} điểm ảnh quá lớn nên không thể vẽ
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Vòm
+	Arch Tool	Công cụ Vòm
+	Arch Tool Options	Tùy chọn Công cụ Vòm
+	Arch Count:	Số vòm:
+	Thickness:	Độ dày:
+	Segments:	Số đoạn:
+	Close into Rings	Khép thành vòng
+	Color Palette	Bảng màu
+	Add Color	Thêm màu
+	Remove Color	Xóa màu
+	Shuffle Colors	Xáo trộn màu
+	Fill Style	Kiểu tô
+	Wide	Rộng
+	Pointed	Nhọn
+	Scallop	Răng cưa tròn
+	Wavy	Gợn sóng
+	Segmented	Chia đoạn
+	Flat	Phẳng
+	Glossy	Bóng
+	Jelly	Thạch
+	Muted	Dịu
+	Pearlescent	Ngọc trai
+	Classic Rainbow	Cầu vồng cổ điển
+	Candy Arch	Vòm kẹo
+	Double Arch	Vòm đôi
+	Scallop Gate	Cổng răng cưa
+	Dream Tunnel	Đường hầm mơ
+	Wavy Arch	Vòm gợn sóng

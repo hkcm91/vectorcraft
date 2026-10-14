@@ -4589,3 +4589,31 @@ mark-style	Japanese	Japońskie
 @msg	unknown parameter `{key}`; the command takes: {keys}	nieznany parametr `{key}`; polecenie przyjmuje: {keys}
 	Load EPS into Clipboard	Wczytaj EPS do schowka
 @msg	an image of {w} × {h} pixels is too large to draw	obraz o wymiarach {w} × {h} pikseli jest zbyt duży, aby go narysować
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Arkada
+	Arch Tool	Narzędzie Arkada
+	Arch Tool Options	Opcje narzędzia Arkada
+	Arch Count:	Liczba łuków:
+	Thickness:	Grubość:
+	Segments:	Segmenty:
+	Close into Rings	Zamknij w pierścienie
+	Color Palette	Paleta kolorów
+	Add Color	Dodaj kolor
+	Remove Color	Usuń kolor
+	Shuffle Colors	Przemieszaj kolory
+	Fill Style	Styl wypełnienia
+	Wide	Szeroki
+	Pointed	Ostrołuk
+	Wavy	Falisty
+	Segmented	Segmentowy
+	Flat	Płaski
+	Glossy	Błyszczący
+	Jelly	Galaretka
+	Muted	Stonowany
+	Pearlescent	Perłowy
+	Classic Rainbow	Klasyczna tęcza
+	Candy Arch	Cukierkowa arkada
+	Double Arch	Podwójna arkada
+	Scallop Gate	Ząbkowana brama
+	Dream Tunnel	Senny tunel
+	Wavy Arch	Falista arkada

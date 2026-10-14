@@ -4747,3 +4747,30 @@ mark-style	Japanese	Japonais
 theme	Appearance	Apparence
 	Load EPS into Clipboard	Charger un EPS dans le presse-papiers
 @msg	an image of {w} × {h} pixels is too large to draw	une image de {w} × {h} pixels est trop grande pour être dessinée
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Arche
+	Arch Tool	Outil Arche
+	Arch Tool Options	Options de l’outil Arche
+	Arch Count:	Nombre d’arches :
+	Thickness:	Épaisseur :
+	Segments:	Segments :
+	Close into Rings	Fermer en anneaux
+	Color Palette	Palette de couleurs
+	Add Color	Ajouter une couleur
+	Remove Color	Supprimer une couleur
+	Shuffle Colors	Mélanger les couleurs
+	Fill Style	Style de remplissage
+	Wide	Large
+	Pointed	Brisée
+	Wavy	Ondulée
+	Segmented	Segmentée
+	Flat	Uni
+	Glossy	Brillant
+	Jelly	Gelée
+	Pearlescent	Nacré
+	Classic Rainbow	Arc-en-ciel classique
+	Candy Arch	Arche bonbon
+	Double Arch	Double arche
+	Scallop Gate	Porte festonnée
+	Dream Tunnel	Tunnel de rêve
+	Wavy Arch	Arche ondulée

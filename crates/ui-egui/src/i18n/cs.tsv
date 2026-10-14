@@ -4747,3 +4747,30 @@ mark-style	Japanese	Japonské
 @msg	unknown parameter `{key}`; the command takes: {keys}	neznámý parametr `{key}`; příkaz přijímá: {keys}
 	Load EPS into Clipboard	Načíst EPS do schránky
 @msg	an image of {w} × {h} pixels is too large to draw	obraz o velikosti {w} × {h} obrazových bodů je příliš velký na vykreslení
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Klenba
+	Arch Tool	Nástroj Klenba
+	Arch Tool Options	Možnosti nástroje Klenba
+	Arch Count:	Počet oblouků:
+	Thickness:	Tloušťka:
+	Segments:	Počet dílů:
+	Close into Rings	Uzavřít do prstenců
+	Color Palette	Paleta barev
+	Add Color	Přidat barvu
+	Remove Color	Odebrat barvu
+	Shuffle Colors	Zamíchat barvy
+	Fill Style	Styl výplně
+	Wide	Široký
+	Pointed	Lomený
+	Wavy	Vlnitý
+	Segmented	Dělený
+	Flat	Plochý
+	Glossy	Lesklý
+	Jelly	Želé
+	Pearlescent	Perleťový
+	Classic Rainbow	Klasická duha
+	Candy Arch	Bonbonová klenba
+	Double Arch	Dvojitá klenba
+	Scallop Gate	Vroubkovaná brána
+	Dream Tunnel	Snový tunel
+	Wavy Arch	Vlnitá klenba

@@ -4280,3 +4280,32 @@ lighting	Light	광원
 @msg	unknown parameter `{key}`; the command takes: {keys}	알 수 없는 매개변수 `{key}`: 이 명령이 받는 매개변수: {keys}
 	Load EPS into Clipboard	EPS를 클립보드로 불러오기
 @msg	an image of {w} × {h} pixels is too large to draw	{w} × {h}픽셀 이미지는 너무 커서 그릴 수 없습니다
+# Arch tool and its options (a VectorCraft addition).
+	Arch	아치
+	Arch Tool	아치 도구
+	Arch Tool Options	아치 도구 옵션
+	Arch Count:	아치 수:
+	Thickness:	두께:
+	Segments:	분할 수:
+	Close into Rings	고리로 닫기
+	Color Palette	색상 팔레트
+	Add Color	색상 추가
+	Remove Color	색상 제거
+	Shuffle Colors	색상 섞기
+	Fill Style	칠 스타일
+	Wide	넓게
+	Pointed	뾰족하게
+	Scallop	가리비
+	Wavy	물결
+	Segmented	분할
+	Flat	단색
+	Glossy	광택
+	Jelly	젤리
+	Muted	차분하게
+	Pearlescent	펄
+	Classic Rainbow	클래식 무지개
+	Candy Arch	캔디 아치
+	Double Arch	더블 아치
+	Scallop Gate	가리비 게이트
+	Dream Tunnel	드림 터널
+	Wavy Arch	물결 아치

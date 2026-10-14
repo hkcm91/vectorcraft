@@ -4296,3 +4296,32 @@ lighting	Light	Світло
 @msg	unknown parameter `{key}`; the command takes: {keys}	невідомий параметр `{key}`; команда приймає: {keys}
 	Load EPS into Clipboard	Завантажити EPS у буфер обміну
 @msg	an image of {w} × {h} pixels is too large to draw	зображення розміром {w} × {h} пікселів завелике для відображення
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Арка
+	Arch Tool	Інструмент «Арка»
+	Arch Tool Options	Параметри інструменту «Арка»
+	Arch Count:	Кількість арок:
+	Thickness:	Товщина:
+	Segments:	Сегменти:
+	Close into Rings	Замкнути в кільця
+	Color Palette	Палітра кольорів
+	Add Color	Додати колір
+	Remove Color	Вилучити колір
+	Shuffle Colors	Перемішати кольори
+	Fill Style	Стиль заливки
+	Wide	Широка
+	Pointed	Стрілчаста
+	Scallop	Фестон
+	Wavy	Хвиляста
+	Segmented	Сегментована
+	Flat	Пласка
+	Glossy	Глянцева
+	Jelly	Желе
+	Muted	Приглушена
+	Pearlescent	Перламутрова
+	Classic Rainbow	Класична веселка
+	Candy Arch	Льодяникова арка
+	Double Arch	Подвійна арка
+	Scallop Gate	Фестонна брама
+	Dream Tunnel	Казковий тунель
+	Wavy Arch	Хвиляста арка

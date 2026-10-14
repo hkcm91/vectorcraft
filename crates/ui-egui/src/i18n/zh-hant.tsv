@@ -3685,3 +3685,32 @@ lighting	Light	光源
 @msg	unknown parameter `{key}`; the command takes: {keys}	未知的參數 `{key}`；此指令接受：{keys}
 	Load EPS into Clipboard	將 EPS 載入剪貼簿
 @msg	an image of {w} × {h} pixels is too large to draw	{w} × {h} 像素的影像過大，無法繪製
+# Arch tool and its options (a VectorCraft addition).
+	Arch	拱形
+	Arch Tool	拱形工具
+	Arch Tool Options	拱形工具選項
+	Arch Count:	拱形數量：
+	Thickness:	粗細：
+	Segments:	分段數：
+	Close into Rings	封閉為圓環
+	Color Palette	色票組
+	Add Color	新增顏色
+	Remove Color	移除顏色
+	Shuffle Colors	隨機排列顏色
+	Fill Style	填色樣式
+	Wide	寬
+	Pointed	尖拱
+	Scallop	扇貝
+	Wavy	波浪
+	Segmented	分段
+	Flat	平面
+	Glossy	光澤
+	Jelly	果凍
+	Muted	柔和
+	Pearlescent	珍珠
+	Classic Rainbow	經典彩虹
+	Candy Arch	糖果拱形
+	Double Arch	雙拱形
+	Scallop Gate	扇貝拱門
+	Dream Tunnel	夢幻隧道
+	Wavy Arch	波浪拱形

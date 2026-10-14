@@ -55,6 +55,8 @@ pub const TOOL_GROUPS: &[&[ToolInfo]] = &[
         t("polygon", "Polygon Tool", None, "tool-polygon"),
         t("star", "Star Tool", None, "tool-star"),
         t("flare", "Flare Tool", None, "tool-flare"),
+        // A VectorCraft addition: nested arch bands (rainbows, tunnels, gates).
+        t("arch", "Arch Tool", None, "tool-arch"),
     ],
     &[t("paintbrush", "Paintbrush Tool", Some("B"), "tool-brush"), t("blobBrush", "Blob Brush Tool", Some("Shift+B"), "tool-blob-brush")],
     &[
