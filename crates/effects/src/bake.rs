@@ -96,6 +96,8 @@ fn bake_node(d: &mut Document, n: &Node) -> Option<Node> {
     }
     if let Some(m) = crate::revolve_art(n).or_else(|| crate::solid_art(n)) {
         let m = evaluate_container(&m).unwrap_or(m);
+        // Smooth-shaded surfaces are images the effect made: embedded in the copy.
+        vectorcraft_doc::generated::adopt(d, &m);
         return Some(bake_pieces(d, m));
     }
     // Type, images, symbol instances and live objects: reshaped through their outlines.
@@ -235,6 +237,7 @@ pub type StrokeArt<'a> = &'a mut dyn FnMut(&mut Document, &PathData, FillRule, &
 pub fn expand_leaf(d: &mut Document, n: &Node, stroke_art: StrokeArt) -> Option<Node> {
     if let Some(m) = crate::revolve::expand_revolve_art(n).or_else(|| crate::solid_art(n)) {
         let m = evaluate_container(&m).unwrap_or(m);
+        vectorcraft_doc::generated::adopt(d, &m);
         return Some(bake_pieces(d, m));
     }
     let (g, rule, ctx, mut m) = leaf_base(n)?;

@@ -83,7 +83,17 @@ fn surface(
     // A loaded file or a profile edited past the limits keeps drawing its source path instead
     // of crashing the frame. Commands validate the same evaluator and report its errors.
     let params = crate::lighting::drawing_params(REVOLVE, &fx.params);
-    let (faces, shadow) = vectorcraft_three_d::revolve_lit(path, b, revolve_options(&params)).ok()?;
+    let vectorcraft_three_d::Revolved { faces, shadow, shading } = vectorcraft_three_d::revolve_lit(path, b, revolve_options(&params)).ok()?;
+    let shadow = shadow.map(|s| Arc::new(crate::lighting::shadow_node(n, s, &params, b.width().max(b.height()))));
+    // Smooth shading in a flat colour: the surface pixel by pixel.
+    if let (Some(c), Some(shading)) = (paint.color(), &shading)
+        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, c)
+    {
+        let mut group = Node::group(n.id, shadow.into_iter().chain([Arc::new(art)]).collect());
+        group.opacity = opacity;
+        group.blend = blend;
+        return Some(group);
+    }
     // Visibility is an expansion option, never a change to live geometry or export baking.
     // Keep all faces for paints whose coverage we cannot prove opaque. A bounded visibility
     // failure also retains the complete surface rather than losing any of the user's art.
@@ -104,16 +114,14 @@ fn surface(
                 depth: f.depth,
                 tint: f.tint,
                 highlight: f.highlight,
-                ramp: f.ramp,
             })
             .collect()
     });
-    let shadow = shadow.map(|s| Arc::new(crate::lighting::shadow_node(n, s, &params, b.width().max(b.height()))));
     let children = shadow
         .into_iter()
         .chain(faces.into_iter().map(|face| {
             let items = match paint.color() {
-                Some(c) => vec![AppearanceItem::Fill(FillLayer::new(crate::lighting::face_paint(c, face.tint, face.highlight, face.ramp.as_ref())))],
+                Some(c) => vec![AppearanceItem::Fill(FillLayer::new(crate::lighting::shaded(c, face.tint, face.highlight)))],
                 None => crate::lighting::shading_layers(&paint, face.brightness, face.highlight),
             };
             // Independently antialiased adjacent polygons otherwise leave a hairline grid.
@@ -224,8 +232,9 @@ mod tests {
         b.line_to((100.0, 160.0));
         Node::path(NodeId(1), PathData::from_bezpath(&b), Appearance::basic(Paint::solid(Color::rgb(0.8, 0.2, 0.1)), Paint::None, 0.0))
     }
+    /// Revolve, shaded flat: its faces as vector paths.
     fn fx() -> Effect {
-        crate::new_effect(REVOLVE, &json!({})).unwrap()
+        crate::new_effect(REVOLVE, &json!({"smoothShading": false})).unwrap()
     }
     #[test]
     fn source_stays_editable_surface_moves_and_hidden_effect_restores_it() {
@@ -296,6 +305,20 @@ mod tests {
         let effect = n.appearance.effects.remove(0);
         n.appearance.items[0].effects_mut().push(effect);
         assert_eq!(expand_revolve_art(&n).unwrap().children().unwrap()[0], expanded.children().unwrap()[0]);
+    }
+
+    #[test]
+    fn smooth_shading_draws_the_surface_pixel_by_pixel() {
+        let mut n = profile_node();
+        n.appearance.effects.push(crate::new_effect(REVOLVE, &json!({})).unwrap());
+        let art = revolve_art(&n).unwrap();
+        let surface = &art.children().unwrap()[0];
+        let clip = &surface.children().unwrap()[0];
+        let NodeKind::Group { children, clip: true } = &clip.kind else { panic!("{:?}", clip.kind) };
+        let NodeKind::Image(im) = &children[1].kind else { panic!("an image") };
+        let pixels = vectorcraft_doc::generated::get(&im.key).unwrap();
+        assert!(pixels.rgba.chunks(4).any(|p| p[3] == 255));
+        assert_eq!(revolve_art(&n), Some(art), "the same pixels again");
     }
 
     #[test]

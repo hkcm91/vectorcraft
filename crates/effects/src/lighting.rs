@@ -8,10 +8,12 @@
 //! `ambientColor`, and `smoothShading` (absent: flat, as effects saved before it shade).
 
 use serde_json::{Value, json};
-use vectorcraft_doc::color::{Color, Gradient, GradientGeom, GradientKind, GradientPaint, GradientStop, Paint};
-use vectorcraft_doc::{Appearance, AppearanceItem, Effect, FillLayer, Node};
-use vectorcraft_geom::PathData;
-use vectorcraft_three_d::{Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, Material, ShadowPosition};
+use std::sync::Arc;
+
+use vectorcraft_doc::color::{Color, Paint};
+use vectorcraft_doc::{Appearance, AppearanceItem, Effect, FillLayer, ImageObject, Node, NodeId, NodeKind};
+use vectorcraft_geom::{Affine, PathData};
+use vectorcraft_three_d::{Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, Material, Shade, Shading, ShadowPosition};
 
 use crate::util::{flag, num, text};
 
@@ -260,14 +262,26 @@ pub fn shaded(c: Color, tint: [f64; 3], highlight: [f64; 3]) -> Paint {
     Paint::solid(Color::rgb(ch(r, tint[0], highlight[0]), ch(g, tint[1], highlight[1]), ch(b, tint[2], highlight[2])))
 }
 
-/// A face's paint: [`shaded`], or with smooth shading a linear gradient along its ramp.
-pub fn face_paint(c: Color, tint: [f64; 3], highlight: [f64; 3], ramp: Option<&vectorcraft_three_d::Ramp>) -> Paint {
-    let Some(r) = ramp else { return shaded(c, tint, highlight) };
-    let colour = |s: &vectorcraft_three_d::Shade| shaded(c, s.tint, s.highlight).color().unwrap_or(c);
-    let stops = r.stops.iter().map(|(o, s)| GradientStop::new(*o as f32, colour(s))).collect();
-    let gradient = Gradient { kind: GradientKind::Linear, stops };
-    let geom = GradientGeom { start: r.from, end: r.to, aspect: 1.0, focal: None };
-    Paint::Gradient(Box::new(GradientPaint { geom: Some(geom), angle: geom.angle_deg(), ..GradientPaint::new(gradient) }))
+/// A smooth-shaded surface in flat colour `c`, drawn pixel by pixel ([`Shading::image`], the
+/// colour as [`shaded`] makes it) and clipped to the outline its faces cover, as a clip group
+/// keeping `id`. The pixels go to [`vectorcraft_doc::generated`]. `None` when the surface has no
+/// area.
+pub fn shaded_surface(id: NodeId, shading: &Shading, c: Color) -> Option<Node> {
+    let [r, g, b] = c.to_rgb();
+    let colour = |s: &Shade| {
+        let ch = |c: f32, t: f64, h: f64| (c * t as f32 + h as f32).clamp(0.0, 1.0);
+        [ch(r, s.tint[0], s.highlight[0]), ch(g, s.tint[1], s.highlight[1]), ch(b, s.tint[2], s.highlight[2])]
+    };
+    let img = shading.image(&colour)?;
+    let (width, height) = (img.width, img.height);
+    let key = vectorcraft_doc::generated::put(width, height, img.rgba)?;
+    let xf = Affine::translate(img.origin.to_vec2()) * Affine::scale(img.step);
+    let image = Node::new(id, NodeKind::Image(Box::new(ImageObject { key, width, height, xf, link: None, placement: Default::default() })));
+    let mut clip = Node::path(id, shading.outline(), Appearance::default());
+    if let NodeKind::Path { clipping, .. } = &mut clip.kind {
+        *clipping = true;
+    }
+    Some(Node::new(id, NodeKind::Group { children: vec![Arc::new(clip), Arc::new(image)], clip: true }))
 }
 
 /// The fill layers that shade a paint that isn't a flat colour (a gradient, a pattern): the paint,

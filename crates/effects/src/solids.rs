@@ -6,7 +6,7 @@ use serde_json::Value;
 use vectorcraft_doc::color::{BlendMode, Paint};
 use vectorcraft_doc::{Appearance, AppearanceItem, Effect, FillLayer, Node, NodeKind, StrokeLayer};
 use vectorcraft_geom::{FillRule, PathData, Rect};
-use vectorcraft_three_d::{Bevel, BevelShape, Extrude, Facet, Inflate, Shaded, View};
+use vectorcraft_three_d::{Bevel, BevelShape, Extrude, Inflate, Shaded, View};
 
 use crate::util::{flag, num, text};
 use crate::{GeomContext, apply_geometry_with, is_geometry};
@@ -137,14 +137,24 @@ pub fn validate_solid(n: &Node, id: &str, p: &Value) -> Result<(), String> {
     facets(id, &path, b, p).map(|_| ())
 }
 
-/// One surface: each facet a path shaded from `paint`, as a group with the paint's opacity and
-/// blend mode (so overlapping facets don't add up their transparency).
-fn surface(n: &Node, facets: Vec<Facet>, paint: &Paint, opacity: f32, blend: BlendMode) -> Node {
-    let children = facets
+/// One surface as a group with the paint's opacity and blend mode (so overlapping facets don't
+/// add up their transparency): with smooth shading in a flat colour the surface pixel by pixel,
+/// otherwise each facet a path shaded from `paint`.
+fn surface(n: &Node, shaded: Shaded, paint: &Paint, opacity: f32, blend: BlendMode) -> Node {
+    if let (Some(c), Some(shading)) = (paint.color(), &shaded.shading)
+        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, c)
+    {
+        let mut group = Node::group(n.id, vec![Arc::new(art)]);
+        group.opacity = opacity;
+        group.blend = blend;
+        return group;
+    }
+    let children = shaded
+        .facets
         .into_iter()
         .map(|face| {
             let items = match paint.color() {
-                Some(c) => vec![AppearanceItem::Fill(FillLayer::new(crate::lighting::face_paint(c, face.tint, face.highlight, face.ramp.as_ref())))],
+                Some(c) => vec![AppearanceItem::Fill(FillLayer::new(crate::lighting::shaded(c, face.tint, face.highlight)))],
                 // Gradients and patterns keep their paint, darkened by black and lit by the highlight.
                 None => crate::lighting::shading_layers(paint, face.brightness, face.highlight),
             };
@@ -200,9 +210,9 @@ fn art_for(n: &Node, fx: &Effect, path: &PathData, rule: FillRule, items: &[&App
         let mut shadow = vec![];
         for item in items {
             let (paint, opacity, blend) = paint_of(item);
-            let s = facets(ROTATE, &region(path, rule, item), b, &p).ok()?;
-            shadow.extend(s.shadow.into_iter().flat_map(|s| s.subpaths));
-            out.push(Arc::new(surface(n, s.facets, &paint, opacity, blend)));
+            let mut s = facets(ROTATE, &region(path, rule, item), b, &p).ok()?;
+            shadow.extend(s.shadow.take().into_iter().flat_map(|s| s.subpaths));
+            out.push(Arc::new(surface(n, s, &paint, opacity, blend)));
         }
         if !shadow.is_empty() {
             out.insert(0, Arc::new(crate::lighting::shadow_node(n, PathData::new(shadow), &p, size)));
@@ -213,9 +223,9 @@ fn art_for(n: &Node, fx: &Effect, path: &PathData, rule: FillRule, items: &[&App
     let (paint, opacity, blend) = paint_of(item);
     // A loaded file or a shape edited past the limits keeps drawing its source path instead of
     // failing the frame; commands validate the same evaluator and report its errors.
-    let s = facets(&fx.id, path, b, &p).ok()?;
-    let shadow = s.shadow.map(|sh| Arc::new(crate::lighting::shadow_node(n, sh, &p, size)));
-    Some(shadow.into_iter().chain([Arc::new(surface(n, s.facets, &paint, opacity, blend))]).collect())
+    let mut s = facets(&fx.id, path, b, &p).ok()?;
+    let shadow = s.shadow.take().map(|sh| Arc::new(crate::lighting::shadow_node(n, sh, &p, size)));
+    Some(shadow.into_iter().chain([Arc::new(surface(n, s, &paint, opacity, blend))]).collect())
 }
 
 fn geometry(path: &PathData, fx: &[Effect], ctx: &GeomContext) -> PathData {

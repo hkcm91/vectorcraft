@@ -21,7 +21,6 @@ pub struct VisibleFace {
     /// The source face's per-channel shading: a multiplier and an added highlight.
     pub tint: [f64; 3],
     pub highlight: [f64; 3],
-    pub ramp: Option<crate::Ramp>,
 }
 
 struct Polygon {
@@ -218,14 +217,7 @@ pub fn visible_faces(faces: &[Face]) -> Result<Vec<VisibleFace>, String> {
             return Err("Revolve visibility creates too many vector anchors".into());
         }
         let path = PathData::new(fragments.into_iter().map(|p| SubPath::polyline(&p, true)).collect());
-        out.push(VisibleFace {
-            path,
-            brightness: face.brightness,
-            depth: face.depth,
-            tint: face.tint,
-            highlight: face.highlight,
-            ramp: face.ramp.clone(),
-        });
+        out.push(VisibleFace { path, brightness: face.brightness, depth: face.depth, tint: face.tint, highlight: face.highlight });
         // A completely covered face need not occupy the grid. Its coverage already belongs
         // to nearer faces; this keeps repeated overlapping surfaces bounded in practice.
         index.insert(polygon.bounds, source)?;
@@ -247,7 +239,6 @@ mod tests {
             brightness,
             tint: [brightness; 3],
             highlight: [0.0; 3],
-            ramp: None,
         }
     }
 

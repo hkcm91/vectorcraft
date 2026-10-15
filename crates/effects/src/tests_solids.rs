@@ -1,7 +1,7 @@
 use serde_json::json;
 use vectorcraft_doc::color::Color;
 use vectorcraft_doc::{Document, NodeId};
-use vectorcraft_geom::{Affine, BezPath};
+use vectorcraft_geom::{Affine, BezPath, Point};
 
 use super::*;
 
@@ -26,19 +26,23 @@ fn faces(art: &Node) -> Vec<&Node> {
     art.children().unwrap().iter().flat_map(|s| s.children().unwrap().iter().map(|f| &**f)).collect()
 }
 
-/// A face's colour; with smooth shading, the mean of its ramp's ends.
+/// A face's colour.
 fn fill_rgb(n: &Node) -> [f32; 3] {
     match &n.appearance.items[0] {
-        AppearanceItem::Fill(f) => match &f.paint {
-            Paint::Gradient(g) => {
-                let stops: Vec<[f32; 3]> = g.gradient.stops.iter().map(|s| s.color.to_rgb()).collect();
-                let k = stops.len() as f32;
-                [0, 1, 2].map(|i| stops.iter().map(|c| c[i]).sum::<f32>() / k)
-            }
-            p => p.color().unwrap().to_rgb(),
-        },
+        AppearanceItem::Fill(f) => f.paint.color().unwrap().to_rgb(),
         _ => panic!("a fill first"),
     }
+}
+
+/// The smooth-shaded image a surface draws (a clip group: the outline, then the image), and its
+/// pixels.
+fn shading_image(surface: &Node) -> (vectorcraft_doc::ImageObject, vectorcraft_doc::generated::Generated) {
+    let group = &surface.children().unwrap()[0];
+    let NodeKind::Group { children, clip: true } = &group.kind else { panic!("a clip group: {:?}", group.kind) };
+    assert!(matches!(children[0].kind, NodeKind::Path { clipping: true, .. }), "clipped to the faces' outline");
+    let NodeKind::Image(im) = &children[1].kind else { panic!("then the image") };
+    let pixels = vectorcraft_doc::generated::get(&im.key).expect("its pixels are stored");
+    ((**im).clone(), pixels)
 }
 
 #[test]
@@ -46,7 +50,7 @@ fn every_solid_draws_shaded_faces_and_leaves_the_source_editable() {
     for id in SOLIDS {
         let mut n = square_node();
         let source = n.path_data().unwrap().clone();
-        n.appearance.effects.push(fx(id, json!({})));
+        n.appearance.effects.push(fx(id, json!({"smoothShading": false})));
         let art = solid_art(&n).unwrap_or_else(|| panic!("{id}"));
         assert_eq!(n.path_data(), Some(&source), "{id}");
         assert!(!faces(&art).is_empty(), "{id}");
@@ -63,13 +67,24 @@ fn every_solid_draws_shaded_faces_and_leaves_the_source_editable() {
         // Hidden, the effect draws nothing of its own.
         n.appearance.effects[0].visible = false;
         assert!(solid_art(&n).is_none(), "{id}");
+        // Smooth shading draws the same red, pixel by pixel.
+        let mut n = square_node();
+        n.appearance.effects.push(fx(id, json!({})));
+        let art = solid_art(&n).unwrap();
+        let (_, pixels) = shading_image(&art.children().unwrap()[0]);
+        let lit: Vec<&[u8]> = pixels.rgba.chunks(4).filter(|p| p[3] == 255 && p[0] > 40).collect();
+        assert!(!lit.is_empty(), "{id}");
+        for p in lit {
+            let [r, g, b] = [p[0], p[1], p[2]].map(f32::from);
+            assert!(r <= 205.0 && (g * 4.0 - r).abs() <= 6.0 && (b * 8.0 - r).abs() <= 10.0, "{id}: {p:?}");
+        }
     }
 }
 
 #[test]
 fn rotate_turns_every_fill_and_stroke_and_the_solids_use_the_top_fill() {
     let mut n = square_node();
-    n.appearance.effects.push(fx(ROTATE, json!({})));
+    n.appearance.effects.push(fx(ROTATE, json!({"smoothShading": false})));
     let art = solid_art(&n).unwrap();
     // The fill's plane and the stroke's outline, each in its own paint.
     let surfaces = art.children().unwrap();
@@ -79,7 +94,7 @@ fn rotate_turns_every_fill_and_stroke_and_the_solids_use_the_top_fill() {
     assert!(paint(&surfaces[1]).iter().all(|c| *c < 0.05), "the black stroke above");
     // Turned 60° about y with no perspective, the stroke's outline spans half its width plus the
     // stroke's own outset, foreshortened as well.
-    n.appearance.effects[0].params = json!({"rotationX": 0, "rotationY": 60, "rotationZ": 0});
+    n.appearance.effects[0].params = json!({"rotationX": 0, "rotationY": 60, "rotationZ": 0, "smoothShading": false});
     let b = solid_art(&n).unwrap().children().unwrap()[1].visual_bounds().unwrap();
     assert!((b.width() - 104.0 * 0.5 - 0.75).abs() < 1e-6, "{b:?}");
     // Extrude & Bevel paints one surface with the top fill.
@@ -136,7 +151,7 @@ fn a_twisted_tapered_hollow_inflate_exports_and_expands() {
     let mut d = Document::new(400.0, 400.0);
     let mut n = square_node();
     n.id = d.alloc_id();
-    let params = json!({"twist": 120, "taper": 50, "cap": false, "bothSides": true, "rotationX": -20, "rotationY": 35});
+    let params = json!({"twist": 120, "taper": 50, "cap": false, "bothSides": true, "rotationX": -20, "rotationY": 35, "smoothShading": false});
     n.appearance.effects.push(fx(INFLATE, params));
     let art = solid_art(&n).unwrap();
     assert_eq!(crate::bake_appearance(&n), Some(art.clone()));
@@ -159,7 +174,7 @@ fn a_twisted_tapered_hollow_inflate_exports_and_expands() {
 fn effects_before_it_shape_the_solid_and_effects_after_it_bend_the_result() {
     let mut n = square_node();
     n.appearance.effects.push(fx("path.offsetPath", json!({"offset": 20})));
-    n.appearance.effects.push(fx(EXTRUDE, json!({"rotationX": 0, "rotationY": 0, "rotationZ": 0, "perspective": 0})));
+    n.appearance.effects.push(fx(EXTRUDE, json!({"rotationX": 0, "rotationY": 0, "rotationZ": 0, "perspective": 0, "smoothShading": false})));
     // Straight on, the extrusion shows its front: the offset square.
     let b = solid_art(&n).unwrap().visual_bounds().unwrap();
     assert!((b.width() - 140.0 - 0.75).abs() < 1e-6, "{b:?}");
@@ -204,7 +219,7 @@ fn inflate_reads_twist_taper_and_cap() {
 #[test]
 fn a_coloured_light_tints_the_faces() {
     let mut n = square_node();
-    n.appearance.effects.push(fx(EXTRUDE, json!({"lightColor": "#0000ff", "ambient": 0.0})));
+    n.appearance.effects.push(fx(EXTRUDE, json!({"lightColor": "#0000ff", "ambient": 0.0, "smoothShading": false})));
     let art = solid_art(&n).unwrap();
     for f in faces(&art) {
         let [r, g, _] = fill_rgb(f);
@@ -214,7 +229,7 @@ fn a_coloured_light_tints_the_faces() {
     let mut m = square_node();
     m.appearance.effects.push(fx(
         EXTRUDE,
-        json!({"lightColor": "#0000ff", "ambient": 0.0, "lights": [{"azimuth": 0, "elevation": 0, "intensity": 100, "color": "#ff0000"}]}),
+        json!({"lightColor": "#0000ff", "ambient": 0.0, "lights": [{"azimuth": 0, "elevation": 0, "intensity": 100, "color": "#ff0000"}], "smoothShading": false}),
     ));
     let art = solid_art(&m).unwrap();
     assert!(faces(&art).iter().any(|f| fill_rgb(f)[0] > 0.1), "the red light reaches some face");
@@ -254,15 +269,9 @@ fn bad_lighting_params_are_refused() {
     assert!(validate_solid(&n, EXTRUDE, &json!({"shadow": "behind", "lights": [{"azimuth": 10, "color": "#ffcc00"}]})).is_ok());
 }
 
-/// Every colour a face's first fill paints: its flat colour, or each of its gradient's stops.
+/// Every colour a face's first fill paints.
 fn face_colours(n: &Node) -> Vec<[f32; 3]> {
-    match &n.appearance.items[0] {
-        AppearanceItem::Fill(f) => match &f.paint {
-            Paint::Gradient(g) => g.gradient.stops.iter().map(|s| s.color.to_rgb()).collect(),
-            p => vec![p.color().unwrap().to_rgb()],
-        },
-        _ => panic!("a fill first"),
-    }
+    vec![fill_rgb(n)]
 }
 
 #[test]
@@ -271,15 +280,60 @@ fn smooth_shading_is_on_for_new_effects_and_off_for_saved_ones_without_it() {
         let mut n = square_node();
         n.appearance.effects.push(fx(id, json!({"rotationY": -40})));
         let art = solid_art(&n).unwrap();
-        assert!(
-            faces(&art).iter().any(|f| matches!(&f.appearance.items[0], AppearanceItem::Fill(fl) if matches!(fl.paint, Paint::Gradient(_)))),
-            "{id}: new effects shade smoothly"
-        );
-        // An effect saved before the option existed has no key: flat, as it was drawn then.
+        // New effects shade pixel by pixel: an image, clipped to the faces' outline, covering it.
+        let (im, pixels) = shading_image(&art.children().unwrap()[0]);
+        assert_eq!((pixels.width, pixels.height), (im.width, im.height));
+        let outline = art.children().unwrap()[0].children().unwrap()[0].children().unwrap()[0].path_data().unwrap().bounds().unwrap();
+        let placed = im.xf.transform_rect_bbox(vectorcraft_geom::Rect::new(0.0, 0.0, f64::from(im.width), f64::from(im.height)));
+        assert!(placed.contains(outline.origin()) && placed.contains(Point::new(outline.x1, outline.y1)), "{id}: {placed:?} {outline:?}");
+        // The same art again shows the same pixels.
+        assert_eq!(solid_art(&n).unwrap(), art, "{id}");
+        // An effect saved before the option existed has no key: flat faces, as it was drawn then.
         n.appearance.effects[0].params.as_object_mut().unwrap().remove("smoothShading");
         let art = solid_art(&n).unwrap();
-        assert!(faces(&art).iter().all(|f| face_colours(f).len() == 1), "{id}");
+        assert!(faces(&art).iter().all(|f| matches!(f.kind, NodeKind::Path { .. }) && face_colours(f).len() == 1), "{id}");
     }
+    // A paint that isn't a flat colour keeps its faces.
+    let mut n = square_node();
+    if let AppearanceItem::Fill(f) = &mut n.appearance.items[0] {
+        f.paint = Paint::Pattern { pattern: "dots".into(), xf: Affine::IDENTITY };
+    }
+    n.appearance.effects.push(fx(INFLATE, json!({})));
+    assert!(faces(&solid_art(&n).unwrap()).iter().all(|f| matches!(f.kind, NodeKind::Path { .. })));
+}
+
+#[test]
+fn exporting_and_expanding_smooth_shading_embeds_its_image() {
+    let mut d = Document::new(400.0, 400.0);
+    let mut n = square_node();
+    n.id = d.alloc_id();
+    n.appearance.effects.push(fx(INFLATE, json!({})));
+    let l = d.layers[0].id;
+    d.insert(Some(l), 0, n.clone()).unwrap();
+    let baked = crate::bake_document(&d).unwrap();
+    let mut keys = vec![];
+    for layer in &baked.layers {
+        layer.walk(&mut |m: &Node| {
+            if let NodeKind::Image(im) = &m.kind {
+                keys.push(im.key.clone());
+            }
+        });
+    }
+    assert_eq!(keys.len(), 1);
+    let blob = baked.images.get(&keys[0]).expect("the export copy holds the image");
+    assert_eq!(blob.mime, "image/png");
+    assert!(d.images.is_empty(), "the document itself is unchanged");
+    // Expand Appearance leaves an image of the document's own.
+    let mut stroke = |_: &mut Document, _: &PathData, _: FillRule, _: &StrokeLayer| None;
+    let expanded = crate::expand_leaf(&mut d, &n, &mut stroke).unwrap();
+    let mut found = 0;
+    expanded.walk(&mut |m: &Node| {
+        if let NodeKind::Image(im) = &m.kind {
+            assert!(d.images.contains_key(&im.key));
+            found += 1;
+        }
+    });
+    assert_eq!(found, 1);
 }
 
 #[test]

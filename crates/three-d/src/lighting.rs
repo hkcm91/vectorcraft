@@ -114,8 +114,8 @@ pub struct Material {
     pub steps: u32,
     /// The ambient light's colour.
     pub ambient_color: [f64; 3],
-    /// Shade curved surfaces smoothly and give flat faces a gentle falloff (each face a linear
-    /// ramp) instead of one flat colour per face.
+    /// Shade curved surfaces smoothly and give flat faces a gentle falloff (pixel by pixel)
+    /// instead of one flat colour per face.
     pub smooth: bool,
 }
 
@@ -158,7 +158,7 @@ impl Shade {
 }
 
 /// Every light of a view, ready to shade with.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Rig {
     /// (direction, intensity, colour, softness) per light, the main one first.
     lights: Vec<(V3, f64, [f64; 3], f64)>,
@@ -189,11 +189,6 @@ impl Rig {
     /// Does the material shade in cel bands?
     pub(crate) fn banded(&self) -> bool {
         self.material.steps >= 2
-    }
-
-    /// The same lights and material without cel bands.
-    pub(crate) fn unbanded(&self) -> Self {
-        Self { material: Material { steps: 0, ..self.material }, ..self.clone() }
     }
 
     /// How a face with unit normal `n` (view space, towards the viewer) is shaded, the lights

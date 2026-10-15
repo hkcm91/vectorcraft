@@ -11,6 +11,7 @@ pub mod blend;
 pub mod clipnest;
 pub mod cmyk;
 pub mod corners;
+pub mod generated;
 pub mod graph;
 pub mod hit;
 mod id_index;

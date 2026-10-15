@@ -1761,8 +1761,10 @@ impl Renderer {
     /// [`Self::adjusted_image`]), or a greyscale copy of them, with their key in the shared store.
     /// `touch` marks them used there.
     fn image_pixmap(&mut self, doc: &Document, key: &str, grey: bool, touch: bool) -> Option<(images::ImageKey, Arc<Pixmap>)> {
+        let generated = || generated_pixmap(key, touch);
         let (key, colour) = match doc.images.get(key) {
             Some(blob) => blob_pixmap(blob, touch)?,
+            None if key.starts_with(vectorcraft_doc::generated::PREFIX) => generated()?,
             None => {
                 let (src, hash, map) = self.adjusts.get(key)?.clone();
                 let (src_key, src) = self.image_pixmap(doc, &src, false, touch)?;
@@ -1809,6 +1811,31 @@ impl Renderer {
 fn lookup(key: &images::ImageKey, touch: bool) -> Option<Arc<Pixmap>> {
     let mut s = images::store();
     if touch { s.get(key) } else { s.peek(key) }
+}
+
+/// The pixels of a generated image (a smooth-shaded 3D surface, see [`vectorcraft_doc::generated`])
+/// from the shared store, and their key there. `None` once neither store has them.
+fn generated_pixmap(key: &str, touch: bool) -> Option<(images::ImageKey, Arc<Pixmap>)> {
+    let key = images::ImageKey { content: key.into(), adjust: None, grey: false, ink: Ink::Display, luts: (0, 0), mip: 0 };
+    if let Some(pm) = lookup(&key, touch) {
+        return Some((key, pm));
+    }
+    let g = vectorcraft_doc::generated::get(&key.content)?;
+    let (w, h) = (u16::try_from(g.width).ok()?, u16::try_from(g.height).ok()?);
+    let data: Vec<vello_cpu::color::PremulRgba8> = g
+        .rgba
+        .chunks_exact(4)
+        .map(|p| {
+            let a = u16::from(p[3]);
+            let m = |c: u8| ((u16::from(c) * a + 127) / 255) as u8;
+            vello_cpu::color::PremulRgba8 { r: m(p[0]), g: m(p[1]), b: m(p[2]), a: p[3] }
+        })
+        .collect();
+    if data.len() != usize::from(w) * usize::from(h) {
+        return None;
+    }
+    let pm = images::store().insert(key.clone(), Arc::new(Pixmap::from_parts(data, w, h)));
+    Some((key, pm))
 }
 
 /// The decoded pixels of `blob` (a CMYK image's inks shown through the working CMYK profile, again

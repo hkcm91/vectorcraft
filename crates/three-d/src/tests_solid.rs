@@ -511,5 +511,5 @@ fn a_solid_casts_its_shadow_below_or_behind_when_asked() {
     assert!(extrude_lit(&p, b, Extrude::default(), under).unwrap().shadow.is_none());
     // Revolve casts one too.
     let r = Revolve { shadow: ShadowPosition::Below, ..Revolve::default() };
-    assert!(crate::revolve_lit(&p, b, r).unwrap().1.is_some());
+    assert!(crate::revolve_lit(&p, b, r).unwrap().shadow.is_some());
 }

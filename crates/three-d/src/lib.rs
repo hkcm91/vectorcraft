@@ -7,11 +7,12 @@
 #![forbid(unsafe_code)]
 
 mod lighting;
+mod raster;
 mod smooth;
 mod solid;
 mod visibility;
 pub use lighting::{Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, Material, Shade, ShadowPosition};
-pub use smooth::Ramp;
+pub use raster::{ShadedImage, Shading};
 pub use solid::{Bevel, BevelShape, Extrude, Facet, Inflate, Shaded, View, extrude, extrude_lit, inflate, inflate_lit, plane, plane_lit};
 pub use visibility::{VisibleFace, visible_faces};
 
@@ -249,9 +250,6 @@ pub struct Face {
     pub brightness: f64,
     pub tint: [f64; 3],
     pub highlight: [f64; 3],
-    /// With smooth shading, how the shade runs across the face (`tint` and `highlight` are then
-    /// its mean).
-    pub ramp: Option<Ramp>,
 }
 
 /// The mean of a tint's channels.
@@ -276,12 +274,21 @@ impl Face {
 /// Evaluate a profile in document space. All subpaths share one axis from `bounds`.
 /// Invalid or excessively complex inputs return an error, never a partial surface.
 pub fn revolve(path: &PathData, bounds: Rect, options: Revolve) -> Result<Vec<Face>, String> {
-    revolve_lit(path, bounds, options).map(|(faces, _)| faces)
+    revolve_lit(path, bounds, options).map(|r| r.faces)
 }
 
-/// [`revolve`], with the shadow the surface casts (an outline to fill) when the options ask for
-/// one and the light can cast it.
-pub fn revolve_lit(path: &PathData, bounds: Rect, options: Revolve) -> Result<(Vec<Face>, Option<PathData>), String> {
+/// A revolved surface: its faces back to front, the shadow it casts (an outline to fill) when the
+/// options ask for one and the light can cast it, and with smooth shading the surface to draw
+/// pixel by pixel (the faces' shades are then their means).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Revolved {
+    pub faces: Vec<Face>,
+    pub shadow: Option<PathData>,
+    pub shading: Option<Shading>,
+}
+
+/// [`revolve`], with its shadow and smooth shading.
+pub fn revolve_lit(path: &PathData, bounds: Rect, options: Revolve) -> Result<Revolved, String> {
     let o = options.sanitized();
     let rig = o.rig();
     let mut casters: Vec<Vec<Vec<V3>>> = vec![];
@@ -381,7 +388,6 @@ pub fn revolve_lit(path: &PathData, bounds: Rect, options: Revolve) -> Result<(V
                     brightness: mean(shade.tint).min(1.0),
                     tint: shade.tint,
                     highlight: shade.highlight,
-                    ramp: None,
                 });
                 if faces.len() > MAX_FACES {
                     return Err("Revolve surface is too complex; reduce Segments or simplify the profile".into());
@@ -389,20 +395,31 @@ pub fn revolve_lit(path: &PathData, bounds: Rect, options: Revolve) -> Result<(V
             }
         }
     }
+    let mut shading = None;
     if rig.smooth() && smooth.len() == faces.len() {
-        let projected: Vec<Vec<Vec<Point>>> = faces.iter().map(|f| vec![f.points.clone()]).collect();
+        // The lights and the eye: six half extents from the centre.
+        let reach = 1.5 * distance;
         let sources: Vec<smooth::Source> =
-            smooth.iter().zip(&projected).map(|((contours, normal), p)| smooth::Source { contours, normal: *normal, projected: p }).collect();
-        for (f, (ramp, shade)) in faces.iter_mut().zip(smooth::shade(&sources, &[], &rig, distance / 4.0)) {
-            f.ramp = ramp;
-            f.tint = shade.tint;
-            f.highlight = shade.highlight;
-            f.brightness = mean(shade.tint).min(1.0);
+            smooth.iter().map(|(contours, normal)| smooth::Source { contours, normal: *normal, given: None }).collect();
+        if let Some(smoothed) = smooth::shade(&sources, &[], &rig, reach) {
+            let mut polys = Vec::with_capacity(smoothed.len());
+            for ((f, (contours, normal)), s) in faces.iter_mut().zip(&smooth).zip(smoothed) {
+                f.tint = s.shade.tint;
+                f.highlight = s.shade.highlight;
+                f.brightness = mean(s.shade.tint).min(1.0);
+                polys.push(raster::Poly {
+                    projected: vec![f.points.clone()],
+                    normals: s.normals,
+                    positions: contours.iter().flatten().copied().collect(),
+                    normal: *normal,
+                });
+            }
+            shading = Some(Shading::new(rig.clone(), reach, polys));
         }
     }
     faces.sort_by(|a, b| a.depth.total_cmp(&b.depth));
     let shadow = lighting::cast(&casters, light, o.shadow, o.shadow_distance, project);
-    Ok((faces, shadow))
+    Ok(Revolved { faces, shadow, shading })
 }
 
 #[cfg(test)]

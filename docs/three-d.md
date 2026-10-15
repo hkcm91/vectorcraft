@@ -1,8 +1,9 @@
 # Extrude & Bevel, Inflate and Rotate
 
 The other three 3D types of **Effect › 3D and Materials** next to [Revolve](revolve.md). Like Revolve each is a
-live effect: the source path stays editable, the effect draws shaded vector faces, and SVG/PDF export, native
-saves and **Object › Expand Appearance** use the same evaluator.
+live effect: the source path stays editable, the effect draws the shaded surface (with smooth shading, an image
+shaded pixel by pixel and clipped to the surface's vector outline; otherwise shaded vector faces), and SVG/PDF
+export, native saves and **Object › Expand Appearance** use the same evaluator.
 
 Select a path or compound path, then choose **Effect › 3D and Materials › Extrude & Bevel…**, **Inflate…** or
 **Rotate…**. The options dialog opens beside the artboard with tabs:
@@ -99,13 +100,16 @@ The **Material** tab sets how the surface takes the light, for the clean 3D icon
   **Color**.
 - **Cel Bands** (2–8) shades in that many flat bands with hard edges and a hard highlight, cel style; 0 is
   continuous.
-- **Smooth shading** (on for new effects) shades curved surfaces smoothly and gives flat faces a gentle falloff:
-  each face is filled with a linear gradient. A vertex's normal is the area-weighted average of the faces around
-  it, twice over, without crossing creases sharper than 50°; the lights and the eye sit at six times the object's
-  size, so a flat face's shade changes across it. The gradient runs the way the shade changes fastest; its ends
-  match the vertices' shades, so neighbouring faces meet in one colour, and where a face's normal turns enough,
-  stops inside it catch a highlight's peak. Cel bands become hard stops. Effects saved before this option keep
-  their flat shading until it is turned on.
+- **Smooth shading** (on for new effects) shades the surface pixel by pixel: curved surfaces shade smoothly,
+  flat faces take a gentle falloff, and highlights and cel band edges are as smooth as the pixels whatever the
+  size of the faces. Each vertex has a normal: for Inflate the exact normal of its height field, elsewhere the
+  area-weighted average of the faces around it, twice over, without crossing creases sharper than 50°. The faces
+  are drawn into a depth buffer at twice the image's resolution each way, the normal and the position blended
+  across each face (mean value coordinates, so a face never creases inside), every pixel shaded with the lights,
+  which with the eye sit at six times the object's size. The image (up to 768 pixels along its longer side, at
+  most 8 pixels a point) is clipped to the union of the faces, so the silhouette stays a crisp vector edge. With
+  a paint that isn't a flat colour (a gradient, a pattern) the faces stay vector, each shaded with its mean.
+  Effects saved before this option keep their flat vector faces until it is turned on.
 
 **Presets**: **Matte** (the defaults), **Soft Touch**, **Plastic**, **Glossy**, **Metal**, **Chrome**, **Rim Glow**
 and **Toon**, shown by name while the material matches. All values are our own.
@@ -135,15 +139,16 @@ out, perspective). No Adobe software, assets, presets or bevel shapes were used.
   rendering**. Faces are painted with the object's top fill (else its top stroke) for Extrude & Bevel and
   Inflate; gradients and patterns are darkened and lit as a whole, not tinted. The light gizmo moves the main
   light only.
-- Smooth shading draws each face as one linear gradient: a highlight smaller than the faces carrying it (very
-  low roughness on a small object) can show as specks. Inflate's surface is finest near the rim.
+- Smooth shading is an image: zoomed in far past its resolution, the shading (not the outline) softens, and
+  exported SVG and PDF carry it as an embedded PNG. Turn **Smooth shading** off for all-vector faces.
 - Shadows are a blurred projection of the solid on one plane; they don't fall on the object itself or on other
   objects.
 - **Perspective** is a 0–100 % strength, as Revolve's, not a 0–160° lens angle.
 - The bevel shapes and their names are our own; custom bevel paths are not supported.
 - Visibility is a painter's algorithm: faces of a closed solid turned away are left out, the rest drawn back to
   front. Concave solids seen at steep angles can overlap wrongly; open (hollow) solids show both sides.
-- Shading is flat per facet: an inflated rim seen almost edge-on shows faint banding where the facets get finer.
+- Without smooth shading, shading is flat per facet: an inflated rim seen almost edge-on shows faint banding
+  where the facets get finer.
 - Paths and compound paths only: convert type, images and groups to outlines first. One 3D effect per object.
 - Curves are followed within 1/2000 of the shape's size (at least 0.05 pt), so a small curve takes a few points
   and a large one up to 32. Extrude & Bevel and Inflate take up to 2,048 outline points, Rotate (which only turns
