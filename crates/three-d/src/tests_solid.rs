@@ -475,3 +475,41 @@ fn a_flat_twisted_inflate_matches_the_extrusion() {
         }
     }
 }
+
+#[test]
+fn coloured_lights_tint_each_channel_and_the_defaults_stay_grey() {
+    let (p, b) = shape(&square(0.0, 0.0, 100.0));
+    for f in extrude(&p, b, Extrude::default(), View::default()).unwrap() {
+        assert!(f.tint.iter().all(|t| close(*t, f.brightness, 1e-12)), "white light: a grey tint");
+    }
+    let red = View { light_color: [1.0, 0.0, 0.0], ambient: 0.0, ..View::default() };
+    for f in extrude(&p, b, Extrude::default(), red).unwrap() {
+        assert!(f.tint[1] == 0.0 && f.tint[2] == 0.0, "{:?}", f.tint);
+    }
+    // A second light from the right brightens the right wall.
+    let base = View { rotation_y: -40.0, ..front() };
+    let right_wall = |v: View| extrude(&p, b, Extrude::default(), v).unwrap().iter().map(|f| f.brightness).fold(0.0, f64::max);
+    let lit = View { extra_lights: [Light { azimuth: 90.0, elevation: 0.0, intensity: 1.0, ..Light::default() }; 3], extra_count: 1, ..base };
+    assert!(right_wall(lit) > right_wall(base));
+}
+
+#[test]
+fn a_solid_casts_its_shadow_below_or_behind_when_asked() {
+    let (p, b) = shape(&square(0.0, 0.0, 100.0));
+    let none = extrude_lit(&p, b, Extrude::default(), View::default()).unwrap();
+    assert!(none.shadow.is_none());
+    let below = View { shadow: ShadowPosition::Below, shadow_distance: 20.0, ..View::default() };
+    let s = extrude_lit(&p, b, Extrude::default(), below).unwrap();
+    let solid = extent(&s.facets);
+    let shadow = s.shadow.expect("a shadow below").bounds().unwrap();
+    assert!(shadow.y1 > solid.y1, "the shadow reaches below the solid: {shadow:?} {solid:?}");
+    let behind = View { shadow: ShadowPosition::Behind, ..View::default() };
+    assert!(inflate_lit(&p, b, Inflate::default(), behind).unwrap().shadow.is_some());
+    assert!(plane_lit(&p, b, behind).unwrap().shadow.is_some());
+    // A light from below casts nothing on the ground.
+    let under = View { light_elevation: -40.0, ..below };
+    assert!(extrude_lit(&p, b, Extrude::default(), under).unwrap().shadow.is_none());
+    // Revolve casts one too.
+    let r = Revolve { shadow: ShadowPosition::Below, ..Revolve::default() };
+    assert!(crate::revolve_lit(&p, b, r).unwrap().1.is_some());
+}

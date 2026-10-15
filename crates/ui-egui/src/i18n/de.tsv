@@ -4315,3 +4315,13 @@ theme	Appearance	Erscheinungsbild
 	Line Weight:	Linienstärke:
 	Font Size:	Schriftgröße:
 	Show Units	Einheiten anzeigen
+# 3D lighting and shadows.
+	Light Source	Lichtquelle
+	Softness	Weichheit
+	Shadows	Schatten
+	Below Object	Unter dem Objekt
+	Behind Object	Hinter dem Objekt
+	Distance	Abstand
+	Delete Light	Licht löschen
+	Add Light	Licht hinzufügen
+	More Lights	Weitere Lichter

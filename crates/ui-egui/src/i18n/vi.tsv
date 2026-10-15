@@ -4342,3 +4342,13 @@ theme	Appearance	Giao diện
 	Line Weight:	Độ dày nét:
 	Font Size:	Cỡ phông:
 	Show Units	Hiện đơn vị
+# 3D lighting and shadows.
+	Light Source	Nguồn sáng
+	Softness	Độ mềm
+	Shadows	Bóng đổ
+	Below Object	Dưới đối tượng
+	Behind Object	Sau đối tượng
+	Distance	Khoảng cách
+	Delete Light	Xóa đèn
+	Add Light	Thêm đèn
+	More Lights	Thêm đèn khác

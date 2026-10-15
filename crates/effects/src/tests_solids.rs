@@ -191,3 +191,56 @@ fn inflate_reads_twist_taper_and_cap() {
     assert_eq!((d.twist, d.taper, d.cap), (0.0, 1.0, true));
     assert_eq!(crate::default_params(INFLATE).unwrap()["cap"], json!(true));
 }
+
+#[test]
+fn a_coloured_light_tints_the_faces() {
+    let mut n = square_node();
+    n.appearance.effects.push(fx(EXTRUDE, json!({"lightColor": "#0000ff", "ambient": 0.0})));
+    let art = solid_art(&n).unwrap();
+    for f in faces(&art) {
+        let [r, g, _] = fill_rgb(f);
+        assert!(r < 1e-6 && g < 1e-6, "a blue light leaves no red or green: {r} {g}");
+    }
+    // Another light adds to it.
+    let mut m = square_node();
+    m.appearance.effects.push(fx(
+        EXTRUDE,
+        json!({"lightColor": "#0000ff", "ambient": 0.0, "lights": [{"azimuth": 0, "elevation": 0, "intensity": 100, "color": "#ff0000"}]}),
+    ));
+    let art = solid_art(&m).unwrap();
+    assert!(faces(&art).iter().any(|f| fill_rgb(f)[0] > 0.1), "the red light reaches some face");
+}
+
+#[test]
+fn a_shadow_is_a_blurred_black_shape_behind_the_faces() {
+    for id in SOLIDS {
+        let mut n = square_node();
+        n.appearance.effects.push(fx(id, json!({"shadow": "below", "shadowDistance": 10, "shadowOpacity": 60, "shadowSoftness": 50})));
+        let art = solid_art(&n).unwrap_or_else(|| panic!("{id}"));
+        let first = &art.children().unwrap()[0];
+        let shadow = if first.path_data().is_some() { first } else { &first.children().unwrap()[0] };
+        assert!(shadow.path_data().is_some(), "{id}: the shadow comes first");
+        assert_eq!(fill_rgb(shadow), [0.0, 0.0, 0.0], "{id}");
+        assert!((shadow.opacity - 0.6).abs() < 1e-6, "{id}");
+        assert!(shadow.appearance.effects.iter().any(|e| e.id == "blur.gaussian"), "{id}: softened by a blur");
+    }
+    let mut n = square_node();
+    n.appearance.effects.push(fx(EXTRUDE, json!({})));
+    let art = solid_art(&n).unwrap();
+    assert!(art.children().unwrap()[0].path_data().is_none(), "no shadow unless asked");
+}
+
+#[test]
+fn bad_lighting_params_are_refused() {
+    let n = square_node();
+    for p in [
+        json!({"shadow": "sideways"}),
+        json!({"lightColor": "bright"}),
+        json!({"lights": [{}, {}, {}, {}]}),
+        json!({"lights": [{"color": 3}]}),
+        json!({"lights": [7]}),
+    ] {
+        assert!(validate_solid(&n, EXTRUDE, &p).is_err(), "{p}");
+    }
+    assert!(validate_solid(&n, EXTRUDE, &json!({"shadow": "behind", "lights": [{"azimuth": 10, "color": "#ffcc00"}]})).is_ok());
+}

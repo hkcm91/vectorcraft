@@ -4324,3 +4324,13 @@ lighting	Light	광원
 	Line Weight:	선 두께:
 	Font Size:	글꼴 크기:
 	Show Units	단위 표시
+# 3D lighting and shadows.
+	Light Source	광원
+	Softness	부드러움
+	Shadows	그림자
+	Below Object	오브젝트 아래
+	Behind Object	오브젝트 뒤
+	Distance	거리
+	Delete Light	조명 삭제
+	Add Light	조명 추가
+	More Lights	추가 조명

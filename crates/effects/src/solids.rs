@@ -6,7 +6,7 @@ use serde_json::Value;
 use vectorcraft_doc::color::{BlendMode, Color, Paint};
 use vectorcraft_doc::{Appearance, AppearanceItem, Effect, FillLayer, Node, NodeKind, StrokeLayer};
 use vectorcraft_geom::{FillRule, PathData, Rect};
-use vectorcraft_three_d::{Bevel, BevelShape, Extrude, Facet, Inflate, View};
+use vectorcraft_three_d::{Bevel, BevelShape, Extrude, Facet, Inflate, Shaded, View};
 
 use crate::util::{flag, num, text};
 use crate::{GeomContext, apply_geometry_with, is_geometry};
@@ -67,6 +67,7 @@ pub fn view_options(p: &Value) -> View {
         light_intensity: num(p, "lightIntensity", 80.0) / 100.0,
         ambient: num(p, "ambient", 25.0) / 100.0,
         shade: flag(p, "shade", true),
+        ..crate::lighting::lighting(p).into_view()
     }
 }
 
@@ -111,12 +112,12 @@ fn profile(n: &Node) -> Option<(PathData, FillRule)> {
     }
 }
 
-fn facets(id: &str, path: &PathData, bounds: Rect, p: &Value) -> Result<Vec<Facet>, String> {
+fn facets(id: &str, path: &PathData, bounds: Rect, p: &Value) -> Result<Shaded, String> {
     let view = view_options(p);
     match id {
-        EXTRUDE => vectorcraft_three_d::extrude(path, bounds, extrude_options(p), view),
-        INFLATE => vectorcraft_three_d::inflate(path, bounds, inflate_options(p), view),
-        _ => vectorcraft_three_d::plane(path, bounds, view),
+        EXTRUDE => vectorcraft_three_d::extrude_lit(path, bounds, extrude_options(p), view),
+        INFLATE => vectorcraft_three_d::inflate_lit(path, bounds, inflate_options(p), view),
+        _ => vectorcraft_three_d::plane_lit(path, bounds, view),
     }
 }
 
@@ -132,6 +133,7 @@ pub fn validate_solid(n: &Node, id: &str, p: &Value) -> Result<(), String> {
         let names: Vec<_> = BevelShape::ALL.iter().map(|b| b.id()).collect();
         return Err(format!("bevel must be none or one of {}", names.join(", ")));
     }
+    crate::lighting::validate(p)?;
     facets(id, &path, b, p).map(|_| ())
 }
 
@@ -143,9 +145,7 @@ fn surface(n: &Node, facets: Vec<Facet>, paint: &Paint, opacity: f32, blend: Ble
         .map(|face| {
             let mut items = vec![];
             if let Some(c) = paint.color() {
-                let [r, g, b] = c.to_rgb();
-                let s = face.brightness as f32;
-                items.push(AppearanceItem::Fill(FillLayer::new(Paint::solid(Color::rgb(r * s, g * s, b * s)))));
+                items.push(AppearanceItem::Fill(FillLayer::new(crate::lighting::tinted(c, face.tint))));
             } else {
                 // Gradients and patterns keep their paint, darkened by a black layer.
                 items.push(AppearanceItem::Fill(FillLayer::new(paint.clone())));
@@ -197,13 +197,20 @@ fn region(path: &PathData, rule: FillRule, item: &AppearanceItem) -> PathData {
 fn art_for(n: &Node, fx: &Effect, path: &PathData, rule: FillRule, items: &[&AppearanceItem]) -> Option<Vec<Arc<Node>>> {
     let b = path.bounds()?;
     let p = crate::merged_params(&fx.id, &fx.params);
+    let size = b.width().max(b.height());
     if fx.id == ROTATE {
-        // Every part turns about the centre of the object's own bounds, so they stay together.
+        // Every part turns about the centre of the object's own bounds, so they stay together;
+        // the shadow is the whole object's, behind them all.
         let mut out = vec![];
+        let mut shadow = vec![];
         for item in items {
             let (paint, opacity, blend) = paint_of(item);
-            let f = facets(ROTATE, &region(path, rule, item), b, &p).ok()?;
-            out.push(Arc::new(surface(n, f, &paint, opacity, blend)));
+            let s = facets(ROTATE, &region(path, rule, item), b, &p).ok()?;
+            shadow.extend(s.shadow.into_iter().flat_map(|s| s.subpaths));
+            out.push(Arc::new(surface(n, s.facets, &paint, opacity, blend)));
+        }
+        if !shadow.is_empty() {
+            out.insert(0, Arc::new(crate::lighting::shadow_node(n, PathData::new(shadow), &p, size)));
         }
         return Some(out);
     }
@@ -211,8 +218,9 @@ fn art_for(n: &Node, fx: &Effect, path: &PathData, rule: FillRule, items: &[&App
     let (paint, opacity, blend) = paint_of(item);
     // A loaded file or a shape edited past the limits keeps drawing its source path instead of
     // failing the frame; commands validate the same evaluator and report its errors.
-    let f = facets(&fx.id, path, b, &p).ok()?;
-    Some(vec![Arc::new(surface(n, f, &paint, opacity, blend))])
+    let s = facets(&fx.id, path, b, &p).ok()?;
+    let shadow = s.shadow.map(|sh| Arc::new(crate::lighting::shadow_node(n, sh, &p, size)));
+    Some(shadow.into_iter().chain([Arc::new(surface(n, s.facets, &paint, opacity, blend))]).collect())
 }
 
 fn geometry(path: &PathData, fx: &[Effect], ctx: &GeomContext) -> PathData {

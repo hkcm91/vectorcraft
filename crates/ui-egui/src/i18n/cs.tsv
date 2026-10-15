@@ -4787,3 +4787,12 @@ mark-style	Japanese	Japonské
 	Line Weight:	Tloušťka čáry:
 	Font Size:	Velikost písma:
 	Show Units	Zobrazit jednotky
+# 3D lighting and shadows.
+	Light Source	Zdroj světla
+	Softness	Měkkost
+	Shadows	Stíny
+	Below Object	Pod objektem
+	Behind Object	Za objektem
+	Delete Light	Odstranit světlo
+	Add Light	Přidat světlo
+	More Lights	Další světla

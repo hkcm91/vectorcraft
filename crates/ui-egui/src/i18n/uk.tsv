@@ -4340,3 +4340,13 @@ lighting	Light	Світло
 	Line Weight:	Товщина лінії:
 	Font Size:	Розмір шрифту:
 	Show Units	Показувати одиниці
+# 3D lighting and shadows.
+	Light Source	Джерело світла
+	Softness	М’якість
+	Shadows	Тіні
+	Below Object	Під об’єктом
+	Behind Object	За об’єктом
+	Distance	Відстань
+	Delete Light	Видалити світло
+	Add Light	Додати світло
+	More Lights	Додаткове світло

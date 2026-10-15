@@ -6,9 +6,11 @@
 //! intersecting profiles can have ambiguous visibility and are not solid modelling inputs.
 #![forbid(unsafe_code)]
 
+mod lighting;
 mod solid;
 mod visibility;
-pub use solid::{Bevel, BevelShape, Extrude, Facet, Inflate, View, extrude, inflate, plane};
+pub use lighting::{Light, MAX_EXTRA_LIGHTS, ShadowPosition};
+pub use solid::{Bevel, BevelShape, Extrude, Facet, Inflate, Shaded, View, extrude, extrude_lit, inflate, inflate_lit, plane, plane_lit};
 pub use visibility::{VisibleFace, visible_faces};
 
 use vectorcraft_geom::{BezPath, ParamCurve, PathData, Point, Rect};
@@ -62,6 +64,15 @@ pub struct Revolve {
     pub light_intensity: f64,
     pub ambient: f64,
     pub shade: bool,
+    /// The main light's colour (linear 0–1 RGB) and softness (0–1).
+    pub light_color: [f64; 3],
+    pub light_softness: f64,
+    /// More lights: the first `extra_count` of `extra_lights`.
+    pub extra_lights: [Light; MAX_EXTRA_LIGHTS],
+    pub extra_count: usize,
+    /// Where the object casts its shadow, and how far beyond it (points).
+    pub shadow: ShadowPosition,
+    pub shadow_distance: f64,
 }
 
 impl Default for Revolve {
@@ -80,6 +91,12 @@ impl Default for Revolve {
             light_intensity: 0.8,
             ambient: 0.25,
             shade: true,
+            light_color: [1.0; 3],
+            light_softness: 0.0,
+            extra_lights: [Light::default(); MAX_EXTRA_LIGHTS],
+            extra_count: 0,
+            shadow: ShadowPosition::None,
+            shadow_distance: 0.0,
         }
     }
 }
@@ -186,8 +203,25 @@ impl Revolve {
             light_elevation: finite(self.light_elevation, 45.0, -90.0, 90.0),
             light_intensity: finite(self.light_intensity, 0.8, 0.0, 1.0),
             ambient: finite(self.ambient, 0.25, 0.0, 1.0),
+            light_color: self.light_color.map(|c| finite(c, 1.0, 0.0, 1.0)),
+            light_softness: finite(self.light_softness, 0.0, 0.0, 1.0),
+            extra_lights: self.extra_lights.map(Light::sanitized),
+            extra_count: self.extra_count.min(MAX_EXTRA_LIGHTS),
+            shadow_distance: finite(self.shadow_distance, 0.0, 0.0, 1e5),
             ..self
         }
+    }
+
+    /// The lights to shade with.
+    pub(crate) fn rig(self) -> lighting::Rig {
+        let main = Light {
+            azimuth: self.light_azimuth,
+            elevation: self.light_elevation,
+            intensity: self.light_intensity,
+            color: self.light_color,
+            softness: self.light_softness,
+        };
+        lighting::Rig::new(main, self.extra_lights.get(..self.extra_count).unwrap_or_default(), self.ambient, self.shade)
     }
     fn rotate(self, v: V3) -> V3 {
         let (sx, cx) = self.rotation_x.to_radians().sin_cos();
@@ -199,12 +233,19 @@ impl Revolve {
     }
 }
 
-/// One opaque vector polygon, already projected. Brightness multiplies the source colour.
+/// One opaque vector polygon, already projected. `tint` multiplies the source colour channel by
+/// channel; `brightness` is its mean (what darkens paints that aren't a flat colour).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Face {
     pub points: Vec<Point>,
     pub depth: f64,
     pub brightness: f64,
+    pub tint: [f64; 3],
+}
+
+/// The mean of a tint's channels.
+pub(crate) fn mean(t: [f64; 3]) -> f64 {
+    (t[0] + t[1] + t[2]) / 3.0
 }
 
 impl Face {
@@ -224,7 +265,15 @@ impl Face {
 /// Evaluate a profile in document space. All subpaths share one axis from `bounds`.
 /// Invalid or excessively complex inputs return an error, never a partial surface.
 pub fn revolve(path: &PathData, bounds: Rect, options: Revolve) -> Result<Vec<Face>, String> {
+    revolve_lit(path, bounds, options).map(|(faces, _)| faces)
+}
+
+/// [`revolve`], with the shadow the surface casts (an outline to fill) when the options ask for
+/// one and the light can cast it.
+pub fn revolve_lit(path: &PathData, bounds: Rect, options: Revolve) -> Result<(Vec<Face>, Option<PathData>), String> {
     let o = options.sanitized();
+    let rig = o.rig();
+    let mut casters: Vec<Vec<Vec<V3>>> = vec![];
     if ![bounds.x0, bounds.y0, bounds.x1, bounds.y1].iter().all(|v| v.is_finite() && v.abs() <= 1e8) {
         return Err("Revolve requires finite profile coordinates within 100 million points".into());
     }
@@ -239,6 +288,10 @@ pub fn revolve(path: &PathData, bounds: Rect, options: Revolve) -> Result<Vec<Fa
     let sweep = o.angle.to_radians();
     let [lx, ly, lz] = o.light_direction();
     let light = V3(lx, ly, lz);
+    let project = |v: V3| {
+        let factor = distance / (distance - v.2 * o.perspective);
+        Point::new(axis + v.0 * factor, center_y + v.1 * factor)
+    };
     let mut faces = Vec::new();
     let mut count = 0;
     for sp in &path.subpaths {
@@ -285,18 +338,15 @@ pub fn revolve(path: &PathData, bounds: Rect, options: Revolve) -> Result<Vec<Fa
                 if normal.dot(normal) < 0.5 {
                     continue;
                 }
+                if o.shadow != ShadowPosition::None {
+                    casters.push(vec![vertices.to_vec()]);
+                }
                 // Profiles may run up or down. Shade the visible side of this two-sided surface.
                 if normal.2 < 0.0 {
                     normal = V3(-normal.0, -normal.1, -normal.2);
                 }
-                let brightness = if o.shade { (o.ambient + o.light_intensity * normal.dot(light).max(0.0)).clamp(0.0, 1.0) } else { 1.0 };
-                let points: Vec<_> = vertices
-                    .iter()
-                    .map(|v| {
-                        let factor = distance / (distance - v.2 * o.perspective);
-                        Point::new(axis + v.0 * factor, center_y + v.1 * factor)
-                    })
-                    .collect();
+                let tint = rig.shade(normal);
+                let points: Vec<_> = vertices.iter().map(|v| project(*v)).collect();
                 if points.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
                     return Err("Revolve projection is not finite".into());
                 }
@@ -309,7 +359,7 @@ pub fn revolve(path: &PathData, bounds: Rect, options: Revolve) -> Result<Vec<Fa
                 if area.abs() < 1e-10 {
                     continue;
                 }
-                faces.push(Face { points, depth: vertices.iter().map(|v| v.2).sum::<f64>() / 4.0, brightness });
+                faces.push(Face { points, depth: vertices.iter().map(|v| v.2).sum::<f64>() / 4.0, brightness: mean(tint), tint });
                 if faces.len() > MAX_FACES {
                     return Err("Revolve surface is too complex; reduce Segments or simplify the profile".into());
                 }
@@ -317,7 +367,8 @@ pub fn revolve(path: &PathData, bounds: Rect, options: Revolve) -> Result<Vec<Fa
         }
     }
     faces.sort_by(|a, b| a.depth.total_cmp(&b.depth));
-    Ok(faces)
+    let shadow = lighting::cast(&casters, light, o.shadow, o.shadow_distance, project);
+    Ok((faces, shadow))
 }
 
 #[cfg(test)]

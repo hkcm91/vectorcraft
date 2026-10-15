@@ -4787,3 +4787,12 @@ theme	Appearance	Apparence
 	Line Weight:	Épaisseur du trait :
 	Font Size:	Corps :
 	Show Units	Afficher les unités
+# 3D lighting and shadows.
+	Light Source	Source lumineuse
+	Softness	Douceur
+	Shadows	Ombres
+	Below Object	Sous l’objet
+	Behind Object	Derrière l’objet
+	Delete Light	Supprimer la lumière
+	Add Light	Ajouter une lumière
+	More Lights	Autres lumières

@@ -3729,3 +3729,13 @@ lighting	Light	光源
 	Line Weight:	線條寬度：
 	Font Size:	字體大小：
 	Show Units	顯示單位
+# 3D lighting and shadows.
+	Light Source	光源
+	Softness	柔和度
+	Shadows	陰影
+	Below Object	物件下方
+	Behind Object	物件後方
+	Distance	距離
+	Delete Light	刪除光源
+	Add Light	新增光源
+	More Lights	更多光源

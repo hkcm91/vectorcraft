@@ -3798,3 +3798,13 @@ axis	Both	Ambos
 	Line Weight:	Espessura da linha:
 	Font Size:	Tamanho da fonte:
 	Show Units	Mostrar unidades
+# 3D lighting and shadows.
+	Light Source	Fonte de luz
+	Softness	Suavidade
+	Shadows	Sombras
+	Below Object	Abaixo do objeto
+	Behind Object	Atrás do objeto
+	Distance	Distância
+	Delete Light	Excluir luz
+	Add Light	Adicionar luz
+	More Lights	Mais luzes

@@ -4360,3 +4360,13 @@ lighting	Light	Luce
 	Line Weight:	Spessore linea:
 	Font Size:	Dimensione font:
 	Show Units	Mostra unità
+# 3D lighting and shadows.
+	Light Source	Sorgente luminosa
+	Softness	Morbidezza
+	Shadows	Ombre
+	Below Object	Sotto l’oggetto
+	Behind Object	Dietro l’oggetto
+	Distance	Distanza
+	Delete Light	Elimina luce
+	Add Light	Aggiungi luce
+	More Lights	Altre luci

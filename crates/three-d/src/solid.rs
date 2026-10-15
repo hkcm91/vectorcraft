@@ -11,9 +11,10 @@
 
 use vectorcraft_geom::{BezPath, ParamCurve, PathData, Point, Rect};
 
-use crate::{MAX_FACES, Revolve, V3};
+use crate::lighting::{self, Light, MAX_EXTRA_LIGHTS, ShadowPosition};
+use crate::{MAX_FACES, Revolve, V3, mean};
 
-/// The view shared by every 3D effect: rotation, perspective and one directional light.
+/// The view shared by every 3D effect: rotation, perspective, the lights and the shadow.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct View {
     pub rotation_x: f64,
@@ -26,6 +27,15 @@ pub struct View {
     pub light_intensity: f64,
     pub ambient: f64,
     pub shade: bool,
+    /// The main light's colour (linear 0–1 RGB) and softness (0–1).
+    pub light_color: [f64; 3],
+    pub light_softness: f64,
+    /// More lights: the first `extra_count` of `extra_lights`.
+    pub extra_lights: [Light; MAX_EXTRA_LIGHTS],
+    pub extra_count: usize,
+    /// Where the object casts its shadow, and how far beyond it (points).
+    pub shadow: ShadowPosition,
+    pub shadow_distance: f64,
 }
 
 impl Default for View {
@@ -41,6 +51,12 @@ impl Default for View {
             light_intensity: r.light_intensity,
             ambient: r.ambient,
             shade: r.shade,
+            light_color: r.light_color,
+            light_softness: r.light_softness,
+            extra_lights: r.extra_lights,
+            extra_count: r.extra_count,
+            shadow: r.shadow,
+            shadow_distance: r.shadow_distance,
         }
     }
 }
@@ -58,6 +74,12 @@ impl View {
             light_intensity: self.light_intensity,
             ambient: self.ambient,
             shade: self.shade,
+            light_color: self.light_color,
+            light_softness: self.light_softness,
+            extra_lights: self.extra_lights,
+            extra_count: self.extra_count,
+            shadow: self.shadow,
+            shadow_distance: self.shadow_distance,
             ..Revolve::default()
         }
         .sanitized()
@@ -200,11 +222,20 @@ impl Default for Inflate {
 }
 
 /// One projected, flat-shaded polygon. Holes are contours of their own (nonzero winding).
+/// `tint` multiplies the paint channel by channel; `brightness` is its mean.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Facet {
     pub contours: Vec<Vec<Point>>,
     pub depth: f64,
     pub brightness: f64,
+    pub tint: [f64; 3],
+}
+
+/// A solid's facets, back to front, and the shadow it casts (an outline to fill), if any.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Shaded {
+    pub facets: Vec<Facet>,
+    pub shadow: Option<PathData>,
 }
 
 impl Facet {
@@ -391,6 +422,7 @@ struct Camera {
     origin: Point,
     distance: f64,
     light: V3,
+    rig: lighting::Rig,
 }
 
 impl Camera {
@@ -398,7 +430,7 @@ impl Camera {
         let view = view.revolve();
         let [lx, ly, lz] = view.light_direction();
         let size = (bounds.width() / 2.0).max(bounds.height() / 2.0).max(depth / 2.0).max(1.0);
-        Self { view, origin: bounds.center(), distance: 4.0 * size, light: V3(lx, ly, lz) }
+        Self { view, origin: bounds.center(), distance: 4.0 * size, light: V3(lx, ly, lz), rig: view.rig() }
     }
     fn rotate(&self, v: V3) -> V3 {
         self.view.rotate(v)
@@ -417,8 +449,8 @@ impl Camera {
         let to_eye = if self.view.perspective > 0.0 { V3(0.0, 0.0, self.distance / self.view.perspective).sub(at).unit() } else { V3(0.0, 0.0, 1.0) };
         n.dot(to_eye)
     }
-    fn brightness(&self, n: V3) -> f64 {
-        if self.view.shade { (self.view.ambient + self.view.light_intensity * n.dot(self.light).max(0.0)).clamp(0.0, 1.0) } else { 1.0 }
+    fn tint(&self, n: V3) -> [f64; 3] {
+        self.rig.shade(n)
     }
 }
 
@@ -429,6 +461,8 @@ struct Builder<'a> {
     /// insides.
     closed: bool,
     facets: Vec<Facet>,
+    /// Every face's contours (view space) when a shadow is wanted, front-facing or not.
+    casters: Vec<Vec<Vec<V3>>>,
 }
 
 impl Builder<'_> {
@@ -441,6 +475,9 @@ impl Builder<'_> {
         let centre = contours.iter().flatten().fold(V3::default(), |s, v| V3(s.0 + v.0, s.1 + v.1, s.2 + v.2));
         let centre = V3(centre.0 / count as f64, centre.1 / count as f64, centre.2 / count as f64);
         let n = n.unit();
+        if self.camera.view.shadow != ShadowPosition::None {
+            self.casters.push(contours.clone());
+        }
         let facing = self.camera.facing(centre, n);
         // A closed solid hides the faces turned away. One seen almost exactly edge-on is kept but
         // drawn first, under everything: on a curved surface rounding alone turns such faces
@@ -462,7 +499,8 @@ impl Builder<'_> {
             return Ok(());
         }
         let depth = if behind { centre.2 - 4.0 * self.camera.distance } else { centre.2 };
-        self.facets.push(Facet { contours, depth, brightness: self.camera.brightness(n) });
+        let tint = self.camera.tint(n);
+        self.facets.push(Facet { contours, depth, brightness: mean(tint), tint });
         if self.facets.len() > MAX_FACES {
             return Err("The 3D surface is too complex; simplify the shape".into());
         }
@@ -490,9 +528,11 @@ impl Builder<'_> {
         Ok(())
     }
 
-    fn finish(mut self) -> Vec<Facet> {
+    fn finish(mut self) -> Shaded {
         self.facets.sort_by(|a, b| a.depth.total_cmp(&b.depth));
-        self.facets
+        let camera = self.camera;
+        let shadow = lighting::cast(&self.casters, camera.light, camera.view.shadow, camera.view.shadow_distance, |v| camera.project(v));
+        Shaded { facets: self.facets, shadow }
     }
 }
 
@@ -626,15 +666,20 @@ fn steps(o: &Extrude) -> Vec<Step> {
 /// Extrude & Bevel: the shape's outline extruded backwards, with optional twist, taper, bevels
 /// and caps.
 pub fn extrude(path: &PathData, bounds: Rect, options: Extrude, view: View) -> Result<Vec<Facet>, String> {
+    extrude_lit(path, bounds, options, view).map(|s| s.facets)
+}
+
+/// [`extrude`], with the shadow the solid casts.
+pub fn extrude_lit(path: &PathData, bounds: Rect, options: Extrude, view: View) -> Result<Shaded, String> {
     check_bounds(bounds)?;
     let o = options.sanitized();
     // No depth: the flat shape, seen from either side.
     if o.depth <= 0.0 {
-        return plane(path, bounds, view);
+        return plane_lit(path, bounds, view);
     }
     let rings = rings(path, bounds.width().max(bounds.height()), MAX_SOLID_POINTS)?;
     let camera = Camera::new(view, bounds, o.depth);
-    let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![] };
+    let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![], casters: vec![] };
     let steps = steps(&o);
     let z = |t: f64| o.depth / 2.0 - o.depth * t;
     let ring_at =
@@ -667,10 +712,15 @@ pub fn extrude(path: &PathData, bounds: Rect, options: Extrude, view: View) -> R
 /// Rotate: the flat art turned in 3D about the centre of `bounds` (which may be larger than the
 /// shape's own, so that every part of one object turns about the same point).
 pub fn plane(path: &PathData, bounds: Rect, view: View) -> Result<Vec<Facet>, String> {
+    plane_lit(path, bounds, view).map(|s| s.facets)
+}
+
+/// [`plane`], with the shadow the turned art casts.
+pub fn plane_lit(path: &PathData, bounds: Rect, view: View) -> Result<Shaded, String> {
     check_bounds(bounds)?;
     let rings = rings(path, bounds.width().max(bounds.height()), MAX_PLANE_POINTS)?;
     let camera = Camera::new(view, bounds, 0.0);
-    let mut b = Builder { camera: &camera, closed: false, facets: vec![] };
+    let mut b = Builder { camera: &camera, closed: false, facets: vec![], casters: vec![] };
     let contours: Vec<Vec<V3>> = rings.iter().map(|r| r.iter().map(|p| camera.place(*p, 0.0)).collect()).collect();
     b.face(contours, camera.rotate(V3(0.0, 0.0, 1.0)))?;
     Ok(b.finish())
@@ -997,15 +1047,20 @@ fn material(outline: &PathData, cell: Rect) -> Option<Vec<Vec<Point>>> {
 
 /// Inflate: the shape puffed out like a cushion, its edge kept where the art's outline is.
 pub fn inflate(path: &PathData, bounds: Rect, options: Inflate, view: View) -> Result<Vec<Facet>, String> {
+    inflate_lit(path, bounds, options, view).map(|s| s.facets)
+}
+
+/// [`inflate`], with the shadow the solid casts.
+pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) -> Result<Shaded, String> {
     check_bounds(bounds)?;
     let o = options.sanitized();
     let rings = rings(path, bounds.width().max(bounds.height()), MAX_SOLID_POINTS)?;
     if rings.is_empty() {
-        return Ok(vec![]);
+        return Ok(Shaded::default());
     }
     let size = bounds.width().max(bounds.height());
     if size <= 0.0 {
-        return Ok(vec![]);
+        return Ok(Shaded::default());
     }
     const CELLS: usize = 48;
     let cell = size / CELLS as f64;
@@ -1023,7 +1078,7 @@ pub fn inflate(path: &PathData, bounds: Rect, options: Inflate, view: View) -> R
     };
     let camera = Camera::new(view, bounds, o.depth + 2.0 * height);
     // Without its back cap the object is a shell open behind, its inside showing.
-    let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![] };
+    let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![], casters: vec![] };
     let half = o.depth / 2.0;
     // The back: turned and scaled by the twist and taper, its puff too.
     let back_turn = Turn::new(bounds, o.twist, o.taper, 1.0);

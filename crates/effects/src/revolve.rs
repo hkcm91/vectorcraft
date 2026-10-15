@@ -36,6 +36,7 @@ pub fn revolve_options(p: &Value) -> Revolve {
         light_intensity: num(p, "lightIntensity", 80.0) / 100.0,
         ambient: num(p, "ambient", 25.0) / 100.0,
         shade: flag(p, "shade", true),
+        ..crate::lighting::lighting(p).into_revolve()
     }
 }
 
@@ -50,6 +51,7 @@ pub fn validate_revolve(n: &Node, p: &Value) -> Result<(), String> {
     if p.get("edge").is_some_and(|v| v.as_str() != Some("left") && v.as_str() != Some("right")) {
         return Err("Revolve edge must be left or right".into());
     }
+    crate::lighting::validate(p)?;
     vectorcraft_three_d::revolve(&path, b, revolve_options(p)).map(|_| ())
 }
 
@@ -80,7 +82,8 @@ fn surface(
     let b = path.bounds()?;
     // A loaded file or a profile edited past the limits keeps drawing its source path instead
     // of crashing the frame. Commands validate the same evaluator and report its errors.
-    let faces = vectorcraft_three_d::revolve(path, b, revolve_options(&merged_params(REVOLVE, &fx.params))).ok()?;
+    let params = merged_params(REVOLVE, &fx.params);
+    let (faces, shadow) = vectorcraft_three_d::revolve_lit(path, b, revolve_options(&params)).ok()?;
     // Visibility is an expansion option, never a change to live geometry or export baking.
     // Keep all faces for paints whose coverage we cannot prove opaque. A bounded visibility
     // failure also retains the complete surface rather than losing any of the user's art.
@@ -93,17 +96,19 @@ fn surface(
     .then(|| vectorcraft_three_d::visible_faces(&faces).ok())
     .flatten();
     let faces = visible.unwrap_or_else(|| {
-        faces.into_iter().map(|f| vectorcraft_three_d::VisibleFace { path: f.path(), brightness: f.brightness, depth: f.depth }).collect()
+        faces
+            .into_iter()
+            .map(|f| vectorcraft_three_d::VisibleFace { path: f.path(), brightness: f.brightness, depth: f.depth, tint: f.tint })
+            .collect()
     });
-    let children = faces
+    let shadow = shadow.map(|s| Arc::new(crate::lighting::shadow_node(n, s, &params, b.width().max(b.height()))));
+    let children = shadow
         .into_iter()
-        .map(|face| {
+        .chain(faces.into_iter().map(|face| {
             let mut fill = FillLayer::new(paint.clone());
             let mut items = vec![];
             if let Some(c) = paint.color() {
-                let [r, g, b] = c.to_rgb();
-                let s = face.brightness as f32;
-                fill.paint = Paint::solid(Color::rgb(r * s, g * s, b * s));
+                fill.paint = crate::lighting::tinted(c, face.tint);
                 items.push(AppearanceItem::Fill(fill));
             } else {
                 items.push(AppearanceItem::Fill(fill));
@@ -124,7 +129,7 @@ fn surface(
                 })
                 .collect();
             Arc::new(Node::path(n.id, face.path, Appearance { items, ..Default::default() }))
-        })
+        }))
         .collect();
     let mut group = Node::group(n.id, children);
     group.opacity = opacity;

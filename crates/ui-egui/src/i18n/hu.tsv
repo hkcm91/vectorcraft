@@ -4754,3 +4754,13 @@ imageTrace	Outline	Körvonal
 	Line Weight:	Vonalvastagság:
 	Font Size:	Betűméret:
 	Show Units	Mértékegység megjelenítése
+# 3D lighting and shadows.
+	Light Source	Fényforrás
+	Softness	Lágyság
+	Shadows	Árnyékok
+	Below Object	Az objektum alatt
+	Behind Object	Az objektum mögött
+	Distance	Távolság
+	Delete Light	Fény törlése
+	Add Light	Fény hozzáadása
+	More Lights	További fények

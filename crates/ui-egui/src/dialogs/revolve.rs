@@ -70,7 +70,7 @@ fn controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
     }
     ui.add_space(8.0);
     if super::revolve_gizmo::lighting(d) {
-        lighting_controls(ui, d);
+        lighting_controls(ui, d, app.session.general_unit());
         return;
     }
     let unit = app.session.general_unit();
@@ -147,7 +147,7 @@ fn solid_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog, id: &
     }
     ui.add_space(8.0);
     if super::revolve_gizmo::lighting(d) {
-        lighting_controls(ui, d);
+        lighting_controls(ui, d, app.session.general_unit());
     } else if object && d.str("__tab") != "rotation" {
         let unit = app.session.general_unit();
         if id == EXTRUDE {
@@ -271,7 +271,7 @@ fn toggle(ui: &mut egui::Ui, d: &mut Dialog, key: &str, name: &str, default: boo
     });
 }
 
-fn lighting_controls(ui: &mut egui::Ui, d: &mut Dialog) {
+fn lighting_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
     ui.horizontal(|ui| {
         let shade = d.bool("shade");
         if widgets::check(ui, tl!("Shading"), shade, true) {
@@ -286,8 +286,97 @@ fn lighting_controls(ui: &mut egui::Ui, d: &mut Dialog) {
         number(ui, d, "lightAzimuth", tl!("Direction"), (-360.0, 360.0), "°", 1, None);
         number(ui, d, "lightElevation", tl!("Elevation"), (-90.0, 90.0), "°", 1, None);
         number(ui, d, "lightIntensity", tl!("Intensity"), (0.0, 100.0), "%", 1, None);
+        colour(ui, d, "lightColor", tl!("Color"));
+        number(ui, d, "lightSoftness", tl!("Softness"), (0.0, 100.0), "%", 1, None);
         number(ui, d, "ambient", tl!("Ambient"), (0.0, 100.0), "%", 1, None);
+        // More lights and the shadow fold away until they are used, keeping the tab compact.
+        let more = d.fields.get("lights").and_then(Value::as_array).is_some_and(|l| !l.is_empty());
+        egui::CollapsingHeader::new(tl!("More Lights")).id_salt("three-d-more-lights").default_open(more).show(ui, |ui| extra_lights(ui, d));
     });
+    let on = d.fields.get("shadow").and_then(Value::as_str).is_some_and(|s| s != "none");
+    egui::CollapsingHeader::new(tl!("Shadows")).id_salt("three-d-shadows").default_open(on).show(ui, |ui| {
+        let positions = [(json!("none"), tl!("None")), (json!("below"), tl!("Below Object")), (json!("behind"), tl!("Behind Object"))];
+        choice(ui, d, "shadow", tl!("Position"), &positions);
+        let on = d.fields.get("shadow").and_then(Value::as_str).is_some_and(|s| s != "none");
+        ui.add_enabled_ui(on, |ui| {
+            number(ui, d, "shadowDistance", tl!("Distance"), (0.0, 100000.0), "", 1, Some(unit));
+            number(ui, d, "shadowOpacity", tl!("Opacity"), (0.0, 100.0), "%", 1, None);
+            number(ui, d, "shadowSoftness", tl!("Softness"), (0.0, 100.0), "%", 1, None);
+        });
+    });
+}
+
+/// A colour value (`#rrggbb`) for `key`, picked with the colour button, and its reset dot.
+fn colour(ui: &mut egui::Ui, d: &mut Dialog, key: &str, name: &str) {
+    let default = vectorcraft_effects::default_params(&d.str("__effect")).and_then(|p| p.get(key).and_then(Value::as_str).map(String::from));
+    let default = default.unwrap_or_else(|| "#ffffff".into());
+    let hex = d.fields.get(key).and_then(Value::as_str).map_or_else(|| default.clone(), String::from);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        label(ui, name);
+        if let Some(v) = colour_button(ui, &hex) {
+            d.fields.insert(key.into(), json!(v));
+        }
+        ui.add_space((ui.available_width() - 24.0).max(0.0));
+        if reset_dot(ui, key, !hex.eq_ignore_ascii_case(&default), &default) {
+            d.fields.insert(key.into(), json!(default));
+        }
+    });
+}
+
+/// egui's colour button for a `#rrggbb` value: the new value when it changed.
+fn colour_button(ui: &mut egui::Ui, hex: &str) -> Option<String> {
+    let mut rgb = vectorcraft_color::Color::from_hex(hex).map(|c| c.to_rgba8(1.0)).map_or([255, 255, 255], |[r, g, b, _]| [r, g, b]);
+    ui.color_edit_button_srgb(&mut rgb).changed().then(|| format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]))
+}
+
+/// The lights besides the main one (`lights`, up to three): each with its direction, elevation,
+/// intensity, colour and softness, and a button to delete it; Add Light below.
+fn extra_lights(ui: &mut egui::Ui, d: &mut Dialog) {
+    let mut lights: Vec<Value> = d.fields.get("lights").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut changed = false;
+    let mut delete = None;
+    for (i, light) in lights.iter_mut().enumerate() {
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            heading(ui, &format!("{} {}", tl!("Light Source"), i + 2));
+            let hex = light.get("color").and_then(Value::as_str).unwrap_or("#ffffff").to_string();
+            if let Some(v) = colour_button(ui, &hex) {
+                light["color"] = json!(v);
+                changed = true;
+            }
+            if widgets::icon_button(ui, "trash-2", tl!("Delete Light"), false, 22.0).clicked() {
+                delete = Some(i);
+            }
+        });
+        for (key, name, lo, hi, default, suffix) in [
+            ("azimuth", tl!("Direction"), -360.0, 360.0, 45.0, "°"),
+            ("elevation", tl!("Elevation"), -90.0, 90.0, 30.0, "°"),
+            ("intensity", tl!("Intensity"), 0.0, 100.0, 50.0, "%"),
+            ("softness", tl!("Softness"), 0.0, 100.0, 0.0, "%"),
+        ] {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                label(ui, name);
+                let v = light.get(key).and_then(Value::as_f64).unwrap_or(default);
+                if let Some(n) = widgets::range_field(ui, ("three-d-light", i, key), v, lo..=hi, suffix, 1, VALUE_W) {
+                    light[key] = json!(n);
+                    changed = true;
+                }
+            });
+        }
+    }
+    if let Some(i) = delete {
+        lights.remove(i);
+        changed = true;
+    }
+    if lights.len() < vectorcraft_three_d::MAX_EXTRA_LIGHTS && widgets::flat_button(ui, tl!("Add Light"), 110.0).clicked() {
+        lights.push(json!({"azimuth": 45.0, "elevation": 30.0, "intensity": 50.0, "color": "#ffffff", "softness": 0.0}));
+        changed = true;
+    }
+    if changed {
+        d.fields.insert("lights".into(), Value::Array(lights));
+    }
 }
 
 fn heading(ui: &mut egui::Ui, text: &str) {

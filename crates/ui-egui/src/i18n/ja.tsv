@@ -4354,3 +4354,13 @@ lighting	Light	ライト
 	Line Weight:	線幅:
 	Font Size:	フォントサイズ:
 	Show Units	単位を表示
+# 3D lighting and shadows.
+	Light Source	光源
+	Softness	柔らかさ
+	Shadows	シャドウ
+	Below Object	オブジェクトの下
+	Behind Object	オブジェクトの背後
+	Distance	距離
+	Delete Light	ライトを削除
+	Add Light	ライトを追加
+	More Lights	その他のライト

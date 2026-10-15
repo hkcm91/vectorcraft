@@ -156,7 +156,8 @@ fn lighting_tab_shows_light_fields_and_keeps_the_dialog_compact() {
         assert!(Rect::from_min_size(Pos2::ZERO, h.screen).contains_rect(h.rect(label)));
     }
     let panel = h.ctx.memory(|m| m.area_rect(Id::new(("dialog", "effect")).with("revolve"))).unwrap();
-    assert!(panel.width() < 420.0 && panel.height() < 460.0, "compact lighting controls: {panel:?}");
+    // Colour and Softness add two rows; More Lights and Shadows stay folded until used.
+    assert!(panel.width() < 420.0 && panel.height() < 520.0, "compact lighting controls: {panel:?}");
     h.drag(h.rect("Direction").center(), vec2(24.0, 0.0));
     assert_ne!(h.value("lightAzimuth"), -45.0);
     h.click(h.response(("revolve-reset", "lightAzimuth")).center());
@@ -256,4 +257,34 @@ fn extrude_bevel_options_enable_with_a_bevel_shape() {
     h.settle();
     assert!(h.ctx.read_response(Id::new(("revolve-reset", "bevelWidth"))).unwrap().enabled());
     assert_eq!(h.response(("revolve-reset", "bevelWidth")), width);
+}
+
+#[test]
+fn lighting_tab_adds_lights_and_a_shadow_to_the_live_effect() {
+    let mut h = Harness::with("M100 100 L200 100 L200 200 L100 200 Z", vectorcraft_effects::EXTRUDE, vec2(1400.0, 1100.0));
+    h.settle();
+    let d = h.app.ui.dialog.as_mut().unwrap();
+    d.fields.insert("__gizmo".into(), json!("light"));
+    h.settle();
+    for label in ["Color", "Softness", "More Lights", "Shadows"] {
+        h.rect(label);
+    }
+    // Shadows opens on a click; a position enables its distance.
+    h.click(h.rect("Shadows").center());
+    h.rect("Position");
+    h.app.ui.dialog.as_mut().unwrap().fields.insert("shadow".into(), json!("below"));
+    h.settle();
+    h.rect("Distance");
+    // More Lights opens on a click; Add Light adds one, shown as Light Source 2.
+    h.click(h.rect("More Lights").center());
+    h.click(h.rect("Add Light").center());
+    let lights = h.app.ui.dialog.as_ref().unwrap().fields.get("lights").and_then(Value::as_array).map_or(0, Vec::len);
+    assert_eq!(lights, 1, "Add Light adds a light");
+    h.rect("Light Source 2");
+    // The live preview draws the shadow first, under the faces.
+    let st = h.app.session.doc().unwrap();
+    let id = st.selection.objects[0];
+    let art = vectorcraft_effects::solid_art(st.doc.node(id).unwrap()).unwrap();
+    let first = &art.children().unwrap()[0];
+    assert!(first.appearance.effects.iter().any(|e| e.id == "blur.gaussian"), "a blurred shadow at the back");
 }

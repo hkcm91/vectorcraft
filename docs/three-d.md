@@ -66,13 +66,30 @@ of an isometric view (each visible axis foreshortened equally). These are our ow
 each view; the dialog shows a preset's name when the angles match it and **Custom** otherwise. The new effects
 open at Off-Axis Front.
 
+## Lighting and shadows
+
+All four 3D types share the **Lighting** tab. The main light has a direction and elevation (also dragged on the
+artboard), an intensity, a **Color** and a **Softness**: a soft light wraps further round the shape, so the side
+turned away is not cut off sharply. **More Lights** adds up to three lights, each with its own direction,
+elevation, intensity, colour and softness. Each face is shaded per colour channel: the ambient light plus every
+light's share (`intensity × colour × (n·l + s) / (1 + s)`, where `s` is the softness), clamped to 0–1 and
+multiplied into the object's colour. Gradients and patterns are darkened by the brightness only, not tinted.
+
+**Shadows** casts the solid's shadow with the main light: **Below Object** on a ground under it (tilted 20°
+towards the viewer, so it shows in a front view), or **Behind Object** on a wall behind it, **Distance** further
+away. Its **Opacity** and **Softness** (a Gaussian blur, relative to the object's size) set how dark and how
+diffuse it is. There is no shadow when the light is below the ground or behind the wall. The shadow is drawn first,
+under the faces, in the same group. The model and the defaults are our own.
+
 ## Parameters (`effect.apply`, `effect.setParams`)
 
 `threeD.extrude`: `depth`, `twist`, `taper` (%), `cap`, `bevel` (`none`, `classic`, `rounded`, `cove`, `step`,
 `ogee`), `bevelWidth`, `bevelHeight`, `bevelRepeat`, `bevelSpace` (%), `bevelInside`, `bevelBothSides`.
 `threeD.inflate`: `depth`, `volume` (%), `bothSides`. All three take the view and lighting parameters Revolve
 uses: `rotationX`, `rotationY`, `rotationZ`, `perspective` (%), `shade`, `lightAzimuth`, `lightElevation`,
-`lightIntensity` (%), `ambient` (%). Lengths are points and scale with the object (Scale Strokes & Effects).
+`lightIntensity` (%), `ambient` (%), and the lighting and shadow parameters every 3D effect takes: `lightColor`
+(`#rrggbb`), `lightSoftness` (%), `lights` (up to three `{azimuth, elevation, intensity, color, softness}`),
+`shadow` (`none`, `below`, `behind`), `shadowDistance`, `shadowOpacity` (%) and `shadowSoftness` (%). Lengths are points and scale with the object (Scale Strokes & Effects).
 Commands validate the shape and the parameters before the document changes.
 
 ## What differs from the public documentation
@@ -82,9 +99,11 @@ and [Create 3D objects](https://helpx.adobe.com/illustrator/desktop/special-effe
 pages, and the archived Extrude & Bevel option list (depth 0–2,000, cap on/off, bevel height, bevel extent in or
 out, perspective). No Adobe software, assets, presets or bevel shapes were used.
 
-- **Materials** (base, Adobe Substance and graphics), **several lights**, light colour and softness, **shadows**
-  and **ray-traced rendering** are not built: shading is one directional light, flat per face, painted with the
-  object's top fill (else its top stroke) for Extrude & Bevel and Inflate.
+- **Materials** (base, Adobe Substance and graphics) and **ray-traced rendering** are not built: shading is flat per
+  face (up to four directional lights), painted with the object's top fill (else its top stroke) for Extrude &
+  Bevel and Inflate. There are no lighting presets, and the light gizmo moves the main light only.
+- Shadows are a blurred projection of the solid on one plane; they don't fall on the object itself or on other
+  objects.
 - **Perspective** is a 0–100 % strength, as Revolve's, not a 0–160° lens angle.
 - The bevel shapes and their names are our own; custom bevel paths are not supported.
 - Visibility is a painter's algorithm: faces of a closed solid turned away are left out, the rest drawn back to

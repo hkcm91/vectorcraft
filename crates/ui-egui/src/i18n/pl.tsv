@@ -4630,3 +4630,13 @@ mark-style	Japanese	Japońskie
 	Line Weight:	Grubość linii:
 	Font Size:	Rozmiar czcionki:
 	Show Units	Pokaż jednostki
+# 3D lighting and shadows.
+	Light Source	Źródło światła
+	Softness	Miękkość
+	Shadows	Cienie
+	Below Object	Pod obiektem
+	Behind Object	Za obiektem
+	Distance	Odległość
+	Delete Light	Usuń światło
+	Add Light	Dodaj światło
+	More Lights	Więcej świateł
