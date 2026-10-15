@@ -83,8 +83,8 @@ diffuse it is. There is no shadow when the light is below the ground or behind t
 under the faces, in the same group. The model and the defaults are our own.
 
 **Presets** on the Lighting tab set the lights in one go: **Standard** (the defaults), **Studio** (a soft key
-light, a cool fill and a back light), **Soft**, **Top Light**, **Dramatic** (a hard side light and a blue back
-light), **Warm & Cool** (a warm key light against cool ambient and fill) and **Flat**. **Ambient Color** tints the
+light, a cool fill and a back light), **Soft**, **Top Light**, **Dramatic** (a hard side light, a blue light
+wrapping round the far edge and a faint cool fill, so the shadow side stays readable), **Warm & Cool** (a warm key light against cool ambient and fill) and **Flat**. **Ambient Color** tints the
 ambient light. The tab shows a preset's name while every light matches it, **Custom** otherwise.
 
 ## Materials

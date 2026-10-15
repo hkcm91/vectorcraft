@@ -382,3 +382,26 @@ fn a_lighting_preset_matches_its_own_params_and_not_another() {
     tweaked.insert("ambient".into(), json!(30));
     assert!(!studio.matches(&tweaked, &defaults));
 }
+
+#[test]
+fn the_dramatic_preset_keeps_its_shadow_side_readable() {
+    // A sphere's far side, turned away from the key light: still clearly the paint, not black.
+    let preset = crate::lighting::LIGHTING_PRESETS.iter().find(|p| p.id == "dramatic").unwrap();
+    let mut params = preset.params();
+    params.insert("volume".into(), json!(50));
+    params.insert("rotationX".into(), json!(0));
+    params.insert("rotationY".into(), json!(0));
+    params.insert("rotationZ".into(), json!(0));
+    let mut b = BezPath::new();
+    b.extend(vectorcraft_geom::Shape::path_elements(&kurbo::Circle::new((150.0, 150.0), 50.0), 0.01));
+    let mut n = Node::path(NodeId(1), PathData::from_bezpath(&b), Appearance::basic(Paint::solid(RED), Paint::None, 0.0));
+    n.appearance.effects.push(fx(INFLATE, Value::Object(params)));
+    let (_, pixels) = shading_image(&solid_art(&n).unwrap().children().unwrap()[0]);
+    let w = pixels.width as usize;
+    let h = pixels.height as usize;
+    // Three quarters of the way across, away from the key light on the left.
+    let p = &pixels.rgba[((h / 2) * w + w * 3 / 4) * 4..][..4];
+    assert!(p[0] >= 40, "the dark side shows the red: {p:?}");
+    let lit = &pixels.rgba[((h / 2) * w + w / 4) * 4..][..4];
+    assert!(lit[0] > p[0] + 60, "and stays clearly darker than the lit side: {lit:?} {p:?}");
+}

@@ -159,10 +159,13 @@ pub const LIGHTING_PRESETS: &[LightingPreset] = &[
     LightingPreset { id: "topLight", main: (0.0, 75.0, 85.0, "#ffffff", 20.0), ambient: 22.0, ambient_color: "#ffffff", lights: &[] },
     LightingPreset {
         id: "dramatic",
-        main: (-75.0, 20.0, 100.0, "#ffffff", 0.0),
-        ambient: 6.0,
-        ambient_color: "#ffffff",
-        lights: &[(150.0, 25.0, 70.0, "#9fc4ff", 0.0)],
+        // A hard key from the side; the shadow side kept readable (it showed near black with
+        // little ambient and only a back light) by a cool ambient, a blue light wrapping round
+        // the far edge and a faint fill.
+        main: (-70.0, 25.0, 100.0, "#ffffff", 0.0),
+        ambient: 14.0,
+        ambient_color: "#c9d6ff",
+        lights: &[(125.0, 20.0, 75.0, "#9fc4ff", 35.0), (50.0, 0.0, 15.0, "#c9d8ff", 50.0)],
     },
     LightingPreset {
         id: "warmCool",
