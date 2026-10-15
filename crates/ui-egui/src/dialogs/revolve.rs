@@ -64,13 +64,18 @@ fn controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
     if id != REVOLVE {
         return solid_controls(app, ui, d, &id);
     }
-    let lighting = super::revolve_gizmo::lighting(d);
-    if let Some(tab) = widgets::tab_bar(ui, &[tl!("Rotation"), tl!("Lighting")], usize::from(lighting)) {
-        d.fields.insert("__gizmo".into(), json!(if tab == 1 { "light" } else { "rotation" }));
+    let current = if super::revolve_gizmo::lighting(d) { 2 } else { usize::from(d.str("__tab") == "material") };
+    if let Some(tab) = widgets::tab_bar(ui, &[tl!("Rotation"), tl!("Material"), tl!("Lighting")], current) {
+        d.fields.insert("__gizmo".into(), json!(if tab == 2 { "light" } else { "rotation" }));
+        d.fields.insert("__tab".into(), json!(if tab == 1 { "material" } else { "rotation" }));
     }
     ui.add_space(8.0);
     if super::revolve_gizmo::lighting(d) {
         lighting_controls(ui, d, app.session.general_unit());
+        return;
+    }
+    if d.str("__tab") == "material" {
+        material_controls(ui, d);
         return;
     }
     let unit = app.session.general_unit();
@@ -132,22 +137,34 @@ fn solid_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog, id: &
     if object {
         tabs.push(tl!("Object"));
     }
-    tabs.extend([tl!("Rotation"), tl!("Lighting")]);
+    tabs.extend([tl!("Rotation"), tl!("Material"), tl!("Lighting")]);
+    let tab_key = d.str("__tab");
     let current = if super::revolve_gizmo::lighting(d) {
         tabs.len() - 1
-    } else if object && d.str("__tab") != "rotation" {
+    } else if tab_key == "material" {
+        tabs.len() - 2
+    } else if object && tab_key != "rotation" {
         0
     } else {
-        tabs.len() - 2
+        tabs.len() - 3
     };
     if let Some(tab) = widgets::tab_bar(ui, &tabs, current) {
         let light = tab + 1 == tabs.len();
         d.fields.insert("__gizmo".into(), json!(if light { "light" } else { "rotation" }));
-        d.fields.insert("__tab".into(), json!(if object && tab == 0 { "object" } else { "rotation" }));
+        let key = if tab + 2 == tabs.len() {
+            "material"
+        } else if object && tab == 0 {
+            "object"
+        } else {
+            "rotation"
+        };
+        d.fields.insert("__tab".into(), json!(key));
     }
     ui.add_space(8.0);
     if super::revolve_gizmo::lighting(d) {
         lighting_controls(ui, d, app.session.general_unit());
+    } else if d.str("__tab") == "material" {
+        material_controls(ui, d);
     } else if object && d.str("__tab") != "rotation" {
         let unit = app.session.general_unit();
         if id == EXTRUDE {
@@ -271,7 +288,66 @@ fn toggle(ui: &mut egui::Ui, d: &mut Dialog, key: &str, name: &str, default: boo
     });
 }
 
+/// The lighting presets' names, in [`vectorcraft_effects::LIGHTING_PRESETS`] order.
+fn lighting_preset_names() -> [&'static str; 7] {
+    [tl!("Standard"), tl!("Studio"), tl!("Soft"), tl!("Top Light"), tl!("Dramatic"), tl!("Warm & Cool"), tl!("Flat")]
+}
+
+/// The material presets' names, in [`vectorcraft_effects::MATERIAL_PRESETS`] order.
+fn material_preset_names() -> [&'static str; 8] {
+    [c3("Matte"), tl!("Soft Touch"), tl!("Plastic"), tl!("Glossy"), tl!("Metal"), tl!("Chrome"), tl!("Rim Glow"), tl!("Toon")]
+}
+
+/// A Presets dropdown showing `names[current]` (Custom when None); the picked index.
+fn presets(ui: &mut egui::Ui, salt: &str, names: &[&str], current: Option<usize>) -> Option<usize> {
+    let mut picked = None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        label(ui, tl!("Presets"));
+        let width = VALUE_W + rail_width(ui) + 6.0;
+        let shown = current.and_then(|i| names.get(i).copied()).unwrap_or(tl!("Custom"));
+        picked = widgets::dropdown(ui, ("three-d-presets", salt), shown, names, width);
+    });
+    picked
+}
+
+/// The Material tab: how the surface takes the light.
+fn material_controls(ui: &mut egui::Ui, d: &mut Dialog) {
+    let id = d.str("__effect");
+    let defaults = vectorcraft_effects::default_params(&id).unwrap_or(Value::Null);
+    let value = |d: &Dialog, k: &str| d.f64(k, defaults.get(k).and_then(Value::as_f64).unwrap_or(0.0));
+    let current = vectorcraft_effects::MATERIAL_PRESETS.iter().position(|(_, p)| p.iter().all(|(k, v)| (value(d, k) - v).abs() < 0.005));
+    heading(ui, tl!("Material"));
+    if let Some(k) = presets(ui, "material", &material_preset_names(), current)
+        && let Some((_, p)) = vectorcraft_effects::MATERIAL_PRESETS.get(k)
+    {
+        d.fields.extend(p.iter().map(|(k, v)| ((*k).to_string(), json!(v))));
+    }
+    number(ui, d, "specular", tl!("Highlight"), (0.0, 100.0), "%", 1, None);
+    ui.add_enabled_ui(value(d, "specular") > 0.0, |ui| {
+        number(ui, d, "roughness", tl!("Roughness"), (0.0, 100.0), "%", 1, None);
+    });
+    number(ui, d, "metallic", tl!("Metallic"), (0.0, 100.0), "%", 1, None);
+    ui.add_space(8.0);
+    heading(ui, tl!("Rim Light"));
+    number(ui, d, "rimLight", tl!("Intensity"), (0.0, 100.0), "%", 1, None);
+    ui.add_enabled_ui(value(d, "rimLight") > 0.0, |ui| colour(ui, d, "rimColor", tl!("Color")));
+    ui.add_space(8.0);
+    heading(ui, tl!("Shading"));
+    number(ui, d, "shadingSteps", tl!("Cel Bands"), (0.0, f64::from(vectorcraft_three_d::MAX_SHADING_STEPS)), "", 0, None);
+    toggle(ui, d, "smoothShading", tl!("Smooth shading"), true);
+}
+
 fn lighting_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
+    let defaults = vectorcraft_effects::default_params(&d.str("__effect")).unwrap_or(Value::Null);
+    let current = vectorcraft_effects::LIGHTING_PRESETS.iter().position(|p| p.matches(&d.fields, &defaults));
+    if let Some(k) = presets(ui, "lighting", &lighting_preset_names(), current)
+        && let Some(p) = vectorcraft_effects::LIGHTING_PRESETS.get(k)
+    {
+        d.fields.extend(p.params());
+        d.fields.insert("shade".into(), json!(true));
+    }
+    ui.add_space(4.0);
     ui.horizontal(|ui| {
         let shade = d.bool("shade");
         if widgets::check(ui, tl!("Shading"), shade, true) {
@@ -289,6 +365,7 @@ fn lighting_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
         colour(ui, d, "lightColor", tl!("Color"));
         number(ui, d, "lightSoftness", tl!("Softness"), (0.0, 100.0), "%", 1, None);
         number(ui, d, "ambient", tl!("Ambient"), (0.0, 100.0), "%", 1, None);
+        colour(ui, d, "ambientColor", tl!("Ambient Color"));
         // More lights and the shadow fold away until they are used, keeping the tab compact.
         let more = d.fields.get("lights").and_then(Value::as_array).is_some_and(|l| !l.is_empty());
         egui::CollapsingHeader::new(tl!("More Lights")).id_salt("three-d-more-lights").default_open(more).show(ui, |ui| extra_lights(ui, d));

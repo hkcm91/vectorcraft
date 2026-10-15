@@ -3808,3 +3808,24 @@ axis	Both	Ambos
 	Delete Light	Excluir luz
 	Add Light	Adicionar luz
 	More Lights	Mais luzes
+# 3D materials and lighting presets.
+	Material	Material
+	Highlight	Brilho especular
+	Roughness	Rugosidade
+	Metallic	Metálico
+	Rim Light	Luz de contorno
+	Cel Bands	Faixas cel
+	Smooth shading	Sombreamento suave
+	Ambient Color	Cor da luz ambiente
+	Soft Touch	Toque suave
+	Plastic	Plástico
+	Metal	Metal
+	Chrome	Cromo
+	Rim Glow	Brilho de contorno
+	Toon	Toon
+	Standard	Padrão
+	Studio	Estúdio
+	Top Light	Luz superior
+	Dramatic	Dramática
+	Warm & Cool	Quente e fria
+3d	Matte	Fosco

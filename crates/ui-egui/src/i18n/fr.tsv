@@ -4796,3 +4796,24 @@ theme	Appearance	Apparence
 	Delete Light	Supprimer la lumière
 	Add Light	Ajouter une lumière
 	More Lights	Autres lumières
+# 3D materials and lighting presets.
+	Material	Matériau
+	Highlight	Reflet
+	Roughness	Rugosité
+	Metallic	Métallique
+	Rim Light	Lumière de contour
+	Cel Bands	Bandes cel
+	Smooth shading	Ombrage lisse
+	Ambient Color	Couleur de la lumière ambiante
+	Soft Touch	Toucher doux
+	Plastic	Plastique
+	Metal	Métal
+	Chrome	Chrome
+	Rim Glow	Halo de contour
+	Toon	Toon
+	Standard	Standard
+	Studio	Studio
+	Top Light	Lumière zénithale
+	Dramatic	Dramatique
+	Warm & Cool	Chaud et froid
+3d	Matte	Mat

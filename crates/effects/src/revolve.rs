@@ -2,13 +2,13 @@
 use std::sync::Arc;
 
 use serde_json::Value;
-use vectorcraft_doc::color::{Color, Paint};
+use vectorcraft_doc::color::Paint;
 use vectorcraft_doc::{Appearance, AppearanceItem, Effect, FillLayer, Node, NodeKind, StrokeLayer};
 use vectorcraft_geom::{PathData, Rect};
 use vectorcraft_three_d::{Edge, Revolve};
 
 use crate::util::{flag, num, text};
-use crate::{GeomContext, apply_geometry_with, is_geometry, merged_params};
+use crate::{GeomContext, apply_geometry_with, is_geometry};
 
 pub const REVOLVE: &str = "threeD.revolve";
 
@@ -82,7 +82,7 @@ fn surface(
     let b = path.bounds()?;
     // A loaded file or a profile edited past the limits keeps drawing its source path instead
     // of crashing the frame. Commands validate the same evaluator and report its errors.
-    let params = merged_params(REVOLVE, &fx.params);
+    let params = crate::lighting::drawing_params(REVOLVE, &fx.params);
     let (faces, shadow) = vectorcraft_three_d::revolve_lit(path, b, revolve_options(&params)).ok()?;
     // Visibility is an expansion option, never a change to live geometry or export baking.
     // Keep all faces for paints whose coverage we cannot prove opaque. A bounded visibility
@@ -98,24 +98,24 @@ fn surface(
     let faces = visible.unwrap_or_else(|| {
         faces
             .into_iter()
-            .map(|f| vectorcraft_three_d::VisibleFace { path: f.path(), brightness: f.brightness, depth: f.depth, tint: f.tint })
+            .map(|f| vectorcraft_three_d::VisibleFace {
+                path: f.path(),
+                brightness: f.brightness,
+                depth: f.depth,
+                tint: f.tint,
+                highlight: f.highlight,
+                ramp: f.ramp,
+            })
             .collect()
     });
     let shadow = shadow.map(|s| Arc::new(crate::lighting::shadow_node(n, s, &params, b.width().max(b.height()))));
     let children = shadow
         .into_iter()
         .chain(faces.into_iter().map(|face| {
-            let mut fill = FillLayer::new(paint.clone());
-            let mut items = vec![];
-            if let Some(c) = paint.color() {
-                fill.paint = crate::lighting::tinted(c, face.tint);
-                items.push(AppearanceItem::Fill(fill));
-            } else {
-                items.push(AppearanceItem::Fill(fill));
-                let mut shadow = FillLayer::new(Paint::solid(Color::BLACK));
-                shadow.opacity = (1.0 - face.brightness) as f32;
-                items.push(AppearanceItem::Fill(shadow));
-            }
+            let items = match paint.color() {
+                Some(c) => vec![AppearanceItem::Fill(FillLayer::new(crate::lighting::face_paint(c, face.tint, face.highlight, face.ramp.as_ref())))],
+                None => crate::lighting::shading_layers(&paint, face.brightness, face.highlight),
+            };
             // Independently antialiased adjacent polygons otherwise leave a hairline grid.
             // Matching narrow edge paint overlaps their coverage in the canvas and exporters.
             // Keep opacity on the surface group so these edges never accumulate transparency.
@@ -213,6 +213,7 @@ fn art(n: &Node, expand: bool) -> Option<Node> {
 mod tests {
     use super::*;
     use serde_json::json;
+    use vectorcraft_doc::color::Color;
     use vectorcraft_doc::{Document, NodeId};
     use vectorcraft_geom::{Affine, BezPath};
     fn profile_node() -> Node {

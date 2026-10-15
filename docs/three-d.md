@@ -81,6 +81,35 @@ away. Its **Opacity** and **Softness** (a Gaussian blur, relative to the object'
 diffuse it is. There is no shadow when the light is below the ground or behind the wall. The shadow is drawn first,
 under the faces, in the same group. The model and the defaults are our own.
 
+**Presets** on the Lighting tab set the lights in one go: **Standard** (the defaults), **Studio** (a soft key
+light, a cool fill and a back light), **Soft**, **Top Light**, **Dramatic** (a hard side light and a blue back
+light), **Warm & Cool** (a warm key light against cool ambient and fill) and **Flat**. **Ambient Color** tints the
+ambient light. The tab shows a preset's name while every light matches it, **Custom** otherwise.
+
+## Materials
+
+The **Material** tab sets how the surface takes the light, for the clean 3D icons and components of UI work:
+
+- **Highlight** adds a specular highlight per light (Blinn-Phong, `highlight × intensity × colour × (n·h)^k`),
+  added on top of the paint, so a highlight can reach white. **Roughness** sets its spread: from a tight polished
+  spot (exponent 256) to a broad sheen (exponent 2).
+- **Metallic** turns the surface into metal: highlights take the paint's colour, the diffuse light fades, and a
+  soft studio reflection (bright overhead, dark underfoot) gives curved metal its banding.
+- **Rim Light** brightens the silhouette, where the surface turns away from the viewer (`(1 − n·v)³`), in its
+  **Color**.
+- **Cel Bands** (2–8) shades in that many flat bands with hard edges and a hard highlight, cel style; 0 is
+  continuous.
+- **Smooth shading** (on for new effects) shades curved surfaces smoothly and gives flat faces a gentle falloff:
+  each face is filled with a linear gradient. A vertex's normal is the area-weighted average of the faces around
+  it, twice over, without crossing creases sharper than 50°; the lights and the eye sit at six times the object's
+  size, so a flat face's shade changes across it. The gradient runs the way the shade changes fastest; its ends
+  match the vertices' shades, so neighbouring faces meet in one colour, and where a face's normal turns enough,
+  stops inside it catch a highlight's peak. Cel bands become hard stops. Effects saved before this option keep
+  their flat shading until it is turned on.
+
+**Presets**: **Matte** (the defaults), **Soft Touch**, **Plastic**, **Glossy**, **Metal**, **Chrome**, **Rim Glow**
+and **Toon**, shown by name while the material matches. All values are our own.
+
 ## Parameters (`effect.apply`, `effect.setParams`)
 
 `threeD.extrude`: `depth`, `twist`, `taper` (%), `cap`, `bevel` (`none`, `classic`, `rounded`, `cove`, `step`,
@@ -89,7 +118,9 @@ under the faces, in the same group. The model and the defaults are our own.
 uses: `rotationX`, `rotationY`, `rotationZ`, `perspective` (%), `shade`, `lightAzimuth`, `lightElevation`,
 `lightIntensity` (%), `ambient` (%), and the lighting and shadow parameters every 3D effect takes: `lightColor`
 (`#rrggbb`), `lightSoftness` (%), `lights` (up to three `{azimuth, elevation, intensity, color, softness}`),
-`shadow` (`none`, `below`, `behind`), `shadowDistance`, `shadowOpacity` (%) and `shadowSoftness` (%). Lengths are points and scale with the object (Scale Strokes & Effects).
+`shadow` (`none`, `below`, `behind`), `shadowDistance`, `shadowOpacity` (%) and `shadowSoftness` (%), and the
+material: `specular`, `roughness`, `metallic`, `rimLight` (%), `rimColor`, `shadingSteps` (0–8), `ambientColor`
+and `smoothShading` (absent: off). Lengths are points and scale with the object (Scale Strokes & Effects).
 Commands validate the shape and the parameters before the document changes.
 
 ## What differs from the public documentation
@@ -99,9 +130,13 @@ and [Create 3D objects](https://helpx.adobe.com/illustrator/desktop/special-effe
 pages, and the archived Extrude & Bevel option list (depth 0–2,000, cap on/off, bevel height, bevel extent in or
 out, perspective). No Adobe software, assets, presets or bevel shapes were used.
 
-- **Materials** (base, Adobe Substance and graphics) and **ray-traced rendering** are not built: shading is flat per
-  face (up to four directional lights), painted with the object's top fill (else its top stroke) for Extrude &
-  Bevel and Inflate. There are no lighting presets, and the light gizmo moves the main light only.
+- **Materials** are our own lighting model (highlight, roughness, metallic, rim light, cel bands): there are no
+  Adobe Substance materials, no textures or bump maps, no graphics mapped onto surfaces and no **ray-traced
+  rendering**. Faces are painted with the object's top fill (else its top stroke) for Extrude & Bevel and
+  Inflate; gradients and patterns are darkened and lit as a whole, not tinted. The light gizmo moves the main
+  light only.
+- Smooth shading draws each face as one linear gradient: a highlight smaller than the faces carrying it (very
+  low roughness on a small object) can show as specks. Inflate's surface is finest near the rim.
 - Shadows are a blurred projection of the solid on one plane; they don't fall on the object itself or on other
   objects.
 - **Perspective** is a 0–100 % strength, as Revolve's, not a 0–160° lens angle.

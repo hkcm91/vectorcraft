@@ -4738,3 +4738,24 @@ mark-style	Japanese	Japonesas
 	Delete Light	Eliminar luz
 	Add Light	Añadir luz
 	More Lights	Más luces
+# 3D materials and lighting presets.
+	Material	Material
+	Highlight	Brillo especular
+	Roughness	Rugosidad
+	Metallic	Metálico
+	Rim Light	Luz de contorno
+	Cel Bands	Bandas cel
+	Smooth shading	Sombreado suave
+	Ambient Color	Color de luz ambiental
+	Soft Touch	Tacto suave
+	Plastic	Plástico
+	Metal	Metal
+	Chrome	Cromo
+	Rim Glow	Brillo de contorno
+	Toon	Toon
+	Standard	Estándar
+	Studio	Estudio
+	Top Light	Luz cenital
+	Dramatic	Dramática
+	Warm & Cool	Cálida y fría
+3d	Matte	Mate

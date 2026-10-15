@@ -1,4 +1,5 @@
 use serde_json::json;
+use vectorcraft_doc::color::Color;
 use vectorcraft_doc::{Document, NodeId};
 use vectorcraft_geom::{Affine, BezPath};
 
@@ -25,9 +26,17 @@ fn faces(art: &Node) -> Vec<&Node> {
     art.children().unwrap().iter().flat_map(|s| s.children().unwrap().iter().map(|f| &**f)).collect()
 }
 
+/// A face's colour; with smooth shading, the mean of its ramp's ends.
 fn fill_rgb(n: &Node) -> [f32; 3] {
     match &n.appearance.items[0] {
-        AppearanceItem::Fill(f) => f.paint.color().unwrap().to_rgb(),
+        AppearanceItem::Fill(f) => match &f.paint {
+            Paint::Gradient(g) => {
+                let stops: Vec<[f32; 3]> = g.gradient.stops.iter().map(|s| s.color.to_rgb()).collect();
+                let k = stops.len() as f32;
+                [0, 1, 2].map(|i| stops.iter().map(|c| c[i]).sum::<f32>() / k)
+            }
+            p => p.color().unwrap().to_rgb(),
+        },
         _ => panic!("a fill first"),
     }
 }
@@ -243,4 +252,79 @@ fn bad_lighting_params_are_refused() {
         assert!(validate_solid(&n, EXTRUDE, &p).is_err(), "{p}");
     }
     assert!(validate_solid(&n, EXTRUDE, &json!({"shadow": "behind", "lights": [{"azimuth": 10, "color": "#ffcc00"}]})).is_ok());
+}
+
+/// Every colour a face's first fill paints: its flat colour, or each of its gradient's stops.
+fn face_colours(n: &Node) -> Vec<[f32; 3]> {
+    match &n.appearance.items[0] {
+        AppearanceItem::Fill(f) => match &f.paint {
+            Paint::Gradient(g) => g.gradient.stops.iter().map(|s| s.color.to_rgb()).collect(),
+            p => vec![p.color().unwrap().to_rgb()],
+        },
+        _ => panic!("a fill first"),
+    }
+}
+
+#[test]
+fn smooth_shading_is_on_for_new_effects_and_off_for_saved_ones_without_it() {
+    for id in SOLIDS {
+        let mut n = square_node();
+        n.appearance.effects.push(fx(id, json!({"rotationY": -40})));
+        let art = solid_art(&n).unwrap();
+        assert!(
+            faces(&art).iter().any(|f| matches!(&f.appearance.items[0], AppearanceItem::Fill(fl) if matches!(fl.paint, Paint::Gradient(_)))),
+            "{id}: new effects shade smoothly"
+        );
+        // An effect saved before the option existed has no key: flat, as it was drawn then.
+        n.appearance.effects[0].params.as_object_mut().unwrap().remove("smoothShading");
+        let art = solid_art(&n).unwrap();
+        assert!(faces(&art).iter().all(|f| face_colours(f).len() == 1), "{id}");
+    }
+}
+
+#[test]
+fn a_glossy_highlight_lifts_a_face_above_its_paint_and_matte_never_does() {
+    // The light straight ahead of a face turned to it: the highlight's peak.
+    let lit = json!({"rotationX": 0, "rotationY": 0, "rotationZ": 0, "lightAzimuth": 0, "lightElevation": 0, "smoothShading": false});
+    let mut matte = square_node();
+    matte.appearance.effects.push(fx(EXTRUDE, lit.clone()));
+    let mut glossy = square_node();
+    let mut p = lit.clone();
+    p.as_object_mut().unwrap().extend([("specular".into(), json!(100)), ("roughness".into(), json!(20))]);
+    glossy.appearance.effects.push(fx(EXTRUDE, p));
+    let brightest = |n: &Node| faces(&solid_art(n).unwrap()).iter().flat_map(|f| face_colours(f)).map(|c| c[1]).fold(0.0f32, f32::max);
+    // The paint's green is 0.2: matte light never brightens it, a highlight adds white.
+    assert!(brightest(&matte) <= 0.2 + 1e-5);
+    assert!(brightest(&glossy) > 0.8, "{}", brightest(&glossy));
+}
+
+#[test]
+fn every_preset_validates_and_bad_material_params_are_refused() {
+    let n = square_node();
+    for (name, p) in crate::MATERIAL_PRESETS {
+        let params: serde_json::Map<String, Value> = p.iter().map(|(k, v)| ((*k).to_string(), json!(v))).collect();
+        assert!(validate_solid(&n, EXTRUDE, &Value::Object(params)).is_ok(), "{name}");
+    }
+    for preset in crate::LIGHTING_PRESETS {
+        assert!(validate_solid(&n, INFLATE, &Value::Object(preset.params())).is_ok(), "{}", preset.id);
+    }
+    for p in [json!({"shadingSteps": 9}), json!({"shadingSteps": -1}), json!({"rimColor": "glow"}), json!({"ambientColor": 4})] {
+        assert!(validate_solid(&n, EXTRUDE, &p).is_err(), "{p}");
+    }
+}
+
+#[test]
+fn a_lighting_preset_matches_its_own_params_and_not_another() {
+    let defaults = crate::default_params(EXTRUDE).unwrap();
+    let standard = &crate::LIGHTING_PRESETS[0];
+    // The defaults are the Standard preset.
+    assert!(standard.matches(&serde_json::Map::new(), &defaults));
+    let studio = &crate::LIGHTING_PRESETS[1];
+    assert!(studio.matches(&studio.params(), &defaults));
+    assert!(!standard.matches(&studio.params(), &defaults));
+    let mut tweaked = studio.params();
+    tweaked.insert("lightColor".into(), json!("#FFFFFF"));
+    assert!(studio.matches(&tweaked, &defaults), "colours compare ignoring case");
+    tweaked.insert("ambient".into(), json!(30));
+    assert!(!studio.matches(&tweaked, &defaults));
 }

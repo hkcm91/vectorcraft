@@ -98,9 +98,15 @@ fn target_effects(app: &VectorcraftApp, item: &Value) -> Vec<vectorcraft_doc::Ef
     node.and_then(|n| n.appearance.effects_at(item.as_u64().map(|i| i as usize))).cloned().unwrap_or_default()
 }
 
-/// An applied effect's values over its defaults.
+/// An applied effect's values over its defaults (a 3D effect's as it is drawn: one saved before
+/// smooth shading keeps it off).
 fn params_of(e: &vectorcraft_doc::Effect) -> Map<String, Value> {
-    match vectorcraft_effects::merged_params(&e.id, &e.params) {
+    let merged = if vectorcraft_effects::is_three_d(&e.id) {
+        vectorcraft_effects::drawing_params(&e.id, &e.params)
+    } else {
+        vectorcraft_effects::merged_params(&e.id, &e.params)
+    };
+    match merged {
         Value::Object(m) => m,
         _ => Map::new(),
     }

@@ -11,7 +11,8 @@
 
 use vectorcraft_geom::{BezPath, ParamCurve, PathData, Point, Rect};
 
-use crate::lighting::{self, Light, MAX_EXTRA_LIGHTS, ShadowPosition};
+use crate::lighting::{self, Light, MAX_EXTRA_LIGHTS, Material, Shade, ShadowPosition};
+use crate::smooth::{self, Source};
 use crate::{MAX_FACES, Revolve, V3, mean};
 
 /// The view shared by every 3D effect: rotation, perspective, the lights and the shadow.
@@ -36,6 +37,8 @@ pub struct View {
     /// Where the object casts its shadow, and how far beyond it (points).
     pub shadow: ShadowPosition,
     pub shadow_distance: f64,
+    /// How the surface takes the light.
+    pub material: Material,
 }
 
 impl Default for View {
@@ -57,6 +60,7 @@ impl Default for View {
             extra_count: r.extra_count,
             shadow: r.shadow,
             shadow_distance: r.shadow_distance,
+            material: r.material,
         }
     }
 }
@@ -80,6 +84,7 @@ impl View {
             extra_count: self.extra_count,
             shadow: self.shadow,
             shadow_distance: self.shadow_distance,
+            material: self.material,
             ..Revolve::default()
         }
         .sanitized()
@@ -222,13 +227,18 @@ impl Default for Inflate {
 }
 
 /// One projected, flat-shaded polygon. Holes are contours of their own (nonzero winding).
-/// `tint` multiplies the paint channel by channel; `brightness` is its mean.
+/// `tint` multiplies the paint channel by channel and `highlight` is added on top; `brightness`
+/// is the tint's mean, at most 1.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Facet {
     pub contours: Vec<Vec<Point>>,
     pub depth: f64,
     pub brightness: f64,
     pub tint: [f64; 3],
+    pub highlight: [f64; 3],
+    /// With smooth shading, how the shade runs across the facet (`tint` and `highlight` are then
+    /// its mean).
+    pub ramp: Option<crate::Ramp>,
 }
 
 /// A solid's facets, back to front, and the shadow it casts (an outline to fill), if any.
@@ -449,7 +459,7 @@ impl Camera {
         let to_eye = if self.view.perspective > 0.0 { V3(0.0, 0.0, self.distance / self.view.perspective).sub(at).unit() } else { V3(0.0, 0.0, 1.0) };
         n.dot(to_eye)
     }
-    fn tint(&self, n: V3) -> [f64; 3] {
+    fn shade(&self, n: V3) -> Shade {
         self.rig.shade(n)
     }
 }
@@ -463,6 +473,10 @@ struct Builder<'a> {
     facets: Vec<Facet>,
     /// Every face's contours (view space) when a shadow is wanted, front-facing or not.
     casters: Vec<Vec<Vec<V3>>>,
+    /// With smooth shading, each facet's view-space contours and shading normal, and the hidden
+    /// faces (contours, outward normal).
+    smooth: Vec<(Vec<Vec<V3>>, V3)>,
+    hidden: Vec<(Vec<Vec<V3>>, V3)>,
 }
 
 impl Builder<'_> {
@@ -487,20 +501,33 @@ impl Builder<'_> {
         } else if self.closed && facing > -0.02 {
             (n, true)
         } else if self.closed {
+            if self.camera.rig.smooth() {
+                self.hidden.push((contours, n));
+            }
             return Ok(());
         } else {
             (V3(-n.0, -n.1, -n.2), false)
         };
-        let contours: Vec<Vec<Point>> = contours.iter().map(|c| c.iter().map(|v| self.camera.project(*v)).collect()).collect();
-        if contours.iter().flatten().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
+        let projected: Vec<Vec<Point>> = contours.iter().map(|c| c.iter().map(|v| self.camera.project(*v)).collect()).collect();
+        if projected.iter().flatten().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
             return Err("The 3D projection is not finite".into());
         }
-        if contours.iter().map(|c| signed_area(c).abs()).sum::<f64>() < 1e-10 {
+        if projected.iter().map(|c| signed_area(c).abs()).sum::<f64>() < 1e-10 {
             return Ok(());
         }
         let depth = if behind { centre.2 - 4.0 * self.camera.distance } else { centre.2 };
-        let tint = self.camera.tint(n);
-        self.facets.push(Facet { contours, depth, brightness: mean(tint), tint });
+        let shade = self.camera.shade(n);
+        if self.camera.rig.smooth() {
+            self.smooth.push((contours, n));
+        }
+        self.facets.push(Facet {
+            contours: projected,
+            depth,
+            brightness: mean(shade.tint).min(1.0),
+            tint: shade.tint,
+            highlight: shade.highlight,
+            ramp: None,
+        });
         if self.facets.len() > MAX_FACES {
             return Err("The 3D surface is too complex; simplify the shape".into());
         }
@@ -529,8 +556,23 @@ impl Builder<'_> {
     }
 
     fn finish(mut self) -> Shaded {
-        self.facets.sort_by(|a, b| a.depth.total_cmp(&b.depth));
         let camera = self.camera;
+        if camera.rig.smooth() && self.smooth.len() == self.facets.len() {
+            let sources: Vec<Source> = self
+                .smooth
+                .iter()
+                .zip(&self.facets)
+                .map(|((contours, normal), f)| Source { contours, normal: *normal, projected: &f.contours })
+                .collect();
+            let shades = smooth::shade(&sources, &self.hidden, &camera.rig, camera.distance / 4.0);
+            for (f, (ramp, shade)) in self.facets.iter_mut().zip(shades) {
+                f.ramp = ramp;
+                f.tint = shade.tint;
+                f.highlight = shade.highlight;
+                f.brightness = mean(shade.tint).min(1.0);
+            }
+        }
+        self.facets.sort_by(|a, b| a.depth.total_cmp(&b.depth));
         let shadow = lighting::cast(&self.casters, camera.light, camera.view.shadow, camera.view.shadow_distance, |v| camera.project(v));
         Shaded { facets: self.facets, shadow }
     }
@@ -679,7 +721,7 @@ pub fn extrude_lit(path: &PathData, bounds: Rect, options: Extrude, view: View) 
     }
     let rings = rings(path, bounds.width().max(bounds.height()), MAX_SOLID_POINTS)?;
     let camera = Camera::new(view, bounds, o.depth);
-    let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![], casters: vec![] };
+    let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![], casters: vec![], smooth: vec![], hidden: vec![] };
     let steps = steps(&o);
     let z = |t: f64| o.depth / 2.0 - o.depth * t;
     let ring_at =
@@ -720,7 +762,7 @@ pub fn plane_lit(path: &PathData, bounds: Rect, view: View) -> Result<Shaded, St
     check_bounds(bounds)?;
     let rings = rings(path, bounds.width().max(bounds.height()), MAX_PLANE_POINTS)?;
     let camera = Camera::new(view, bounds, 0.0);
-    let mut b = Builder { camera: &camera, closed: false, facets: vec![], casters: vec![] };
+    let mut b = Builder { camera: &camera, closed: false, facets: vec![], casters: vec![], smooth: vec![], hidden: vec![] };
     let contours: Vec<Vec<V3>> = rings.iter().map(|r| r.iter().map(|p| camera.place(*p, 0.0)).collect()).collect();
     b.face(contours, camera.rotate(V3(0.0, 0.0, 1.0)))?;
     Ok(b.finish())
@@ -907,6 +949,9 @@ struct Membrane {
     /// φ at each node; outside the shape, extrapolated (negative) from the inside, so
     /// interpolation crosses zero near the outline.
     phi: Vec<f64>,
+    /// φ over the distance to the outline at each node (its slope there); outside, the slope it
+    /// was continued at.
+    ratio: Vec<f64>,
     peak: f64,
 }
 
@@ -992,6 +1037,8 @@ impl Membrane {
         // Outside nodes next to the shape: φ continued past the outline at the slope of their
         // inside neighbours, so values interpolated between them reach zero at the outline.
         let mut ext = phi.clone();
+        let mut ratio: Vec<f64> =
+            (0..nx * ny).map(|k| if inside[k] { phi[k] / edges.distance(node(k % nx, k / nx)).max(1e-9 * step) } else { 0.0 }).collect();
         for j in 0..ny {
             for i in 0..nx {
                 let k = idx(i, j);
@@ -1009,20 +1056,45 @@ impl Membrane {
                     slopes.push(phi[idx(ni as usize, nj as usize)] / d_in);
                 }
                 if !slopes.is_empty() {
-                    ext[k] = -d_out * slopes.iter().sum::<f64>() / slopes.len() as f64;
+                    let slope = slopes.iter().sum::<f64>() / slopes.len() as f64;
+                    ext[k] = -d_out * slope;
+                    ratio[k] = slope;
                 }
             }
         }
-        Self { origin, step, nx, ny, phi: ext, peak }
+        Self { origin, step, nx, ny, phi: ext, ratio, peak }
+    }
+
+    /// How many cells in from the outline φ follows the distance to it ([`Self::at_rim`]).
+    const RIM: f64 = 3.0;
+
+    /// φ at `p`, which lies `d` from the outline. Within [`Self::RIM`] cells of it, φ is its slope times
+    /// that exact distance: the grid alone staircases along a curved outline, and the lifted
+    /// rim, steep there, would show that as ripples.
+    fn at_rim(&self, p: Point, d: f64) -> f64 {
+        let grid = self.at(p);
+        let band = Self::RIM * self.step;
+        // A distance that isn't a number (or none: far inside) leaves the grid's value.
+        if d.partial_cmp(&band) != Some(std::cmp::Ordering::Less) {
+            return grid;
+        }
+        let t = (d / band).clamp(0.0, 1.0);
+        let w = t * t * (3.0 - 2.0 * t);
+        self.interpolate(&self.ratio, p) * d * (1.0 - w) + grid * w
     }
 
     /// φ at `p`, interpolated between the four nodes around it.
     fn at(&self, p: Point) -> f64 {
+        self.interpolate(&self.phi, p)
+    }
+
+    /// One of the node fields at `p`, interpolated between the four nodes around it.
+    fn interpolate(&self, field: &[f64], p: Point) -> f64 {
         let fx = ((p.x - self.origin.x) / self.step).clamp(0.0, (self.nx - 1) as f64);
         let fy = ((p.y - self.origin.y) / self.step).clamp(0.0, (self.ny - 1) as f64);
         let (i, j) = ((fx.floor() as usize).min(self.nx.saturating_sub(2)), (fy.floor() as usize).min(self.ny.saturating_sub(2)));
         let (tx, ty) = (fx - i as f64, fy - j as f64);
-        let v = |i: usize, j: usize| self.phi.get(j * self.nx + i).copied().unwrap_or(0.0);
+        let v = |i: usize, j: usize| field.get(j * self.nx + i).copied().unwrap_or(0.0);
         if self.nx < 2 || self.ny < 2 {
             return v(0, 0);
         }
@@ -1074,11 +1146,12 @@ pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) 
         if m.peak <= 0.0 || edges.near(p, 1e-9) {
             return 0.0;
         }
-        height * (m.at(p).max(0.0) / m.peak).sqrt()
+        let d = if edges.near(p, Membrane::RIM * cell) { edges.distance(p) } else { f64::INFINITY };
+        height * (m.at_rim(p, d).max(0.0) / m.peak).sqrt()
     };
     let camera = Camera::new(view, bounds, o.depth + 2.0 * height);
     // Without its back cap the object is a shell open behind, its inside showing.
-    let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![], casters: vec![] };
+    let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![], casters: vec![], smooth: vec![], hidden: vec![] };
     let half = o.depth / 2.0;
     // The back: turned and scaled by the twist and taper, its puff too.
     let back_turn = Turn::new(bounds, o.twist, o.taper, 1.0);

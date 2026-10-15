@@ -4325,3 +4325,24 @@ theme	Appearance	Erscheinungsbild
 	Delete Light	Licht löschen
 	Add Light	Licht hinzufügen
 	More Lights	Weitere Lichter
+# 3D materials and lighting presets.
+	Material	Material
+	Highlight	Glanzlicht
+	Roughness	Rauheit
+	Metallic	Metallisch
+	Rim Light	Kantenlicht
+	Cel Bands	Cel-Stufen
+	Smooth shading	Weiche Schattierung
+	Ambient Color	Umgebungslichtfarbe
+	Soft Touch	Soft-Touch
+	Plastic	Kunststoff
+	Metal	Metall
+	Chrome	Chrom
+	Rim Glow	Kantenglühen
+	Toon	Toon
+	Standard	Standard
+	Studio	Studio
+	Top Light	Oberlicht
+	Dramatic	Dramatisch
+	Warm & Cool	Warm & kalt
+3d	Matte	Matt

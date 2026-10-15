@@ -4366,3 +4366,24 @@ lighting	Light	Свет
 	Delete Light	Удалить свет
 	Add Light	Добавить свет
 	More Lights	Дополнительный свет
+# 3D materials and lighting presets.
+	Material	Материал
+	Highlight	Блик
+	Roughness	Шероховатость
+	Metallic	Металличность
+	Rim Light	Контровой свет
+	Cel Bands	Полосы cel
+	Smooth shading	Плавное затенение
+	Ambient Color	Цвет рассеянного света
+	Soft Touch	Софт-тач
+	Plastic	Пластик
+	Metal	Металл
+	Chrome	Хром
+	Rim Glow	Контровое свечение
+	Toon	Мультяшный
+	Standard	Стандартный
+	Studio	Студия
+	Top Light	Верхний свет
+	Dramatic	Драматичный
+	Warm & Cool	Тёплый и холодный
+3d	Matte	Матовый

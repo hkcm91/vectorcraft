@@ -4764,3 +4764,24 @@ imageTrace	Outline	Körvonal
 	Delete Light	Fény törlése
 	Add Light	Fény hozzáadása
 	More Lights	További fények
+# 3D materials and lighting presets.
+	Material	Anyag
+	Highlight	Csillanás
+	Roughness	Érdesség
+	Metallic	Fémesség
+	Rim Light	Peremfény
+	Cel Bands	Cel-sávok
+	Smooth shading	Sima árnyékolás
+	Ambient Color	Környezeti fény színe
+	Soft Touch	Puha tapintású
+	Plastic	Műanyag
+	Metal	Fém
+	Chrome	Króm
+	Rim Glow	Peremragyogás
+	Toon	Rajzfilm
+	Standard	Normál
+	Studio	Stúdió
+	Top Light	Felső fény
+	Dramatic	Drámai
+	Warm & Cool	Meleg és hideg
+3d	Matte	Matt

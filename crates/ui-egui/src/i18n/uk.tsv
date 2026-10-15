@@ -4350,3 +4350,24 @@ lighting	Light	Світло
 	Delete Light	Видалити світло
 	Add Light	Додати світло
 	More Lights	Додаткове світло
+# 3D materials and lighting presets.
+	Material	Матеріал
+	Highlight	Відблиск
+	Roughness	Шорсткість
+	Metallic	Металевість
+	Rim Light	Контурне світло
+	Cel Bands	Смуги cel
+	Smooth shading	Плавне затінення
+	Ambient Color	Колір розсіяного світла
+	Soft Touch	Софт-тач
+	Plastic	Пластик
+	Metal	Метал
+	Chrome	Хром
+	Rim Glow	Контурне сяйво
+	Toon	Мультяшний
+	Standard	Стандартний
+	Studio	Студія
+	Top Light	Верхнє світло
+	Dramatic	Драматичний
+	Warm & Cool	Теплий і холодний
+3d	Matte	Матовий

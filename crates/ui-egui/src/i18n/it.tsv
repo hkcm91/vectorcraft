@@ -4370,3 +4370,24 @@ lighting	Light	Luce
 	Delete Light	Elimina luce
 	Add Light	Aggiungi luce
 	More Lights	Altre luci
+# 3D materials and lighting presets.
+	Material	Materiale
+	Highlight	Riflesso
+	Roughness	Ruvidità
+	Metallic	Metallico
+	Rim Light	Luce di contorno
+	Cel Bands	Bande cel
+	Smooth shading	Ombreggiatura morbida
+	Ambient Color	Colore luce ambiente
+	Soft Touch	Soft touch
+	Plastic	Plastica
+	Metal	Metallo
+	Chrome	Cromo
+	Rim Glow	Bagliore di contorno
+	Toon	Toon
+	Standard	Standard
+	Studio	Studio
+	Top Light	Luce dall’alto
+	Dramatic	Drammatica
+	Warm & Cool	Caldo e freddo
+3d	Matte	Opaco

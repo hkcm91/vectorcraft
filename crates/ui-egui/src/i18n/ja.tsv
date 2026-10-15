@@ -4364,3 +4364,24 @@ lighting	Light	ライト
 	Delete Light	ライトを削除
 	Add Light	ライトを追加
 	More Lights	その他のライト
+# 3D materials and lighting presets.
+	Material	マテリアル
+	Highlight	ハイライト
+	Roughness	粗さ
+	Metallic	メタリック
+	Rim Light	リムライト
+	Cel Bands	セルの階調
+	Smooth shading	スムーズシェーディング
+	Ambient Color	環境光の色
+	Soft Touch	ソフトタッチ
+	Plastic	プラスチック
+	Metal	メタル
+	Chrome	クローム
+	Rim Glow	リムグロー
+	Toon	トゥーン
+	Standard	標準
+	Studio	スタジオ
+	Top Light	トップライト
+	Dramatic	ドラマチック
+	Warm & Cool	暖色と寒色
+3d	Matte	マット

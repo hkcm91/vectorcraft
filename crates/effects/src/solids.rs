@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use serde_json::Value;
-use vectorcraft_doc::color::{BlendMode, Color, Paint};
+use vectorcraft_doc::color::{BlendMode, Paint};
 use vectorcraft_doc::{Appearance, AppearanceItem, Effect, FillLayer, Node, NodeKind, StrokeLayer};
 use vectorcraft_geom::{FillRule, PathData, Rect};
 use vectorcraft_three_d::{Bevel, BevelShape, Extrude, Facet, Inflate, Shaded, View};
@@ -143,16 +143,11 @@ fn surface(n: &Node, facets: Vec<Facet>, paint: &Paint, opacity: f32, blend: Ble
     let children = facets
         .into_iter()
         .map(|face| {
-            let mut items = vec![];
-            if let Some(c) = paint.color() {
-                items.push(AppearanceItem::Fill(FillLayer::new(crate::lighting::tinted(c, face.tint))));
-            } else {
-                // Gradients and patterns keep their paint, darkened by a black layer.
-                items.push(AppearanceItem::Fill(FillLayer::new(paint.clone())));
-                let mut shadow = FillLayer::new(Paint::solid(Color::BLACK));
-                shadow.opacity = (1.0 - face.brightness) as f32;
-                items.push(AppearanceItem::Fill(shadow));
-            }
+            let items = match paint.color() {
+                Some(c) => vec![AppearanceItem::Fill(FillLayer::new(crate::lighting::face_paint(c, face.tint, face.highlight, face.ramp.as_ref())))],
+                // Gradients and patterns keep their paint, darkened by black and lit by the highlight.
+                None => crate::lighting::shading_layers(paint, face.brightness, face.highlight),
+            };
             // Adjacent facets, antialiased on their own, would leave hairline seams: a narrow
             // stroke of the same paint closes them. No wider than the facet is thick, though: seen
             // at a grazing angle a facet can be thinner than the stroke, and its stroke would then
@@ -196,7 +191,7 @@ fn region(path: &PathData, rule: FillRule, item: &AppearanceItem) -> PathData {
 /// (or, without one, the top stroke); Rotate turns every fill and stroke, each in its own paint.
 fn art_for(n: &Node, fx: &Effect, path: &PathData, rule: FillRule, items: &[&AppearanceItem]) -> Option<Vec<Arc<Node>>> {
     let b = path.bounds()?;
-    let p = crate::merged_params(&fx.id, &fx.params);
+    let p = crate::lighting::drawing_params(&fx.id, &fx.params);
     let size = b.width().max(b.height());
     if fx.id == ROTATE {
         // Every part turns about the centre of the object's own bounds, so they stay together;

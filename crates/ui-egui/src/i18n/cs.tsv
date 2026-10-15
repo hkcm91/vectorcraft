@@ -4796,3 +4796,24 @@ mark-style	Japanese	Japonské
 	Delete Light	Odstranit světlo
 	Add Light	Přidat světlo
 	More Lights	Další světla
+# 3D materials and lighting presets.
+	Material	Materiál
+	Highlight	Odlesk
+	Roughness	Drsnost
+	Metallic	Kovovost
+	Rim Light	Obrysové světlo
+	Cel Bands	Pásma cel
+	Smooth shading	Hladké stínování
+	Ambient Color	Barva okolního světla
+	Soft Touch	Jemný dotek
+	Plastic	Plast
+	Metal	Kov
+	Chrome	Chrom
+	Rim Glow	Obrysová záře
+	Toon	Kreslený
+	Standard	Standardní
+	Studio	Studio
+	Top Light	Horní světlo
+	Dramatic	Dramatické
+	Warm & Cool	Teplé a studené
+3d	Matte	Matný

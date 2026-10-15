@@ -4352,3 +4352,24 @@ theme	Appearance	Giao diện
 	Delete Light	Xóa đèn
 	Add Light	Thêm đèn
 	More Lights	Thêm đèn khác
+# 3D materials and lighting presets.
+	Material	Chất liệu
+	Highlight	Điểm sáng
+	Roughness	Độ nhám
+	Metallic	Độ kim loại
+	Rim Light	Đèn viền
+	Cel Bands	Dải màu cel
+	Smooth shading	Tô bóng mượt
+	Ambient Color	Màu ánh sáng môi trường
+	Soft Touch	Mềm mại
+	Plastic	Nhựa
+	Metal	Kim loại
+	Chrome	Crôm
+	Rim Glow	Viền phát sáng
+	Toon	Hoạt hình
+	Standard	Tiêu chuẩn
+	Studio	Studio
+	Top Light	Đèn từ trên
+	Dramatic	Kịch tính
+	Warm & Cool	Ấm và lạnh
+3d	Matte	Mờ

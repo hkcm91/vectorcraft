@@ -7,9 +7,11 @@
 #![forbid(unsafe_code)]
 
 mod lighting;
+mod smooth;
 mod solid;
 mod visibility;
-pub use lighting::{Light, MAX_EXTRA_LIGHTS, ShadowPosition};
+pub use lighting::{Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, Material, Shade, ShadowPosition};
+pub use smooth::Ramp;
 pub use solid::{Bevel, BevelShape, Extrude, Facet, Inflate, Shaded, View, extrude, extrude_lit, inflate, inflate_lit, plane, plane_lit};
 pub use visibility::{VisibleFace, visible_faces};
 
@@ -73,6 +75,8 @@ pub struct Revolve {
     /// Where the object casts its shadow, and how far beyond it (points).
     pub shadow: ShadowPosition,
     pub shadow_distance: f64,
+    /// How the surface takes the light.
+    pub material: Material,
 }
 
 impl Default for Revolve {
@@ -97,6 +101,7 @@ impl Default for Revolve {
             extra_count: 0,
             shadow: ShadowPosition::None,
             shadow_distance: 0.0,
+            material: Material::default(),
         }
     }
 }
@@ -208,6 +213,7 @@ impl Revolve {
             extra_lights: self.extra_lights.map(Light::sanitized),
             extra_count: self.extra_count.min(MAX_EXTRA_LIGHTS),
             shadow_distance: finite(self.shadow_distance, 0.0, 0.0, 1e5),
+            material: self.material.sanitized(),
             ..self
         }
     }
@@ -221,7 +227,7 @@ impl Revolve {
             color: self.light_color,
             softness: self.light_softness,
         };
-        lighting::Rig::new(main, self.extra_lights.get(..self.extra_count).unwrap_or_default(), self.ambient, self.shade)
+        lighting::Rig::new(main, self.extra_lights.get(..self.extra_count).unwrap_or_default(), self.ambient, self.material, self.shade)
     }
     fn rotate(self, v: V3) -> V3 {
         let (sx, cx) = self.rotation_x.to_radians().sin_cos();
@@ -234,13 +240,18 @@ impl Revolve {
 }
 
 /// One opaque vector polygon, already projected. `tint` multiplies the source colour channel by
-/// channel; `brightness` is its mean (what darkens paints that aren't a flat colour).
+/// channel and `highlight` is added on top; `brightness` is the tint's mean, at most 1 (what
+/// darkens paints that aren't a flat colour).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Face {
     pub points: Vec<Point>,
     pub depth: f64,
     pub brightness: f64,
     pub tint: [f64; 3],
+    pub highlight: [f64; 3],
+    /// With smooth shading, how the shade runs across the face (`tint` and `highlight` are then
+    /// its mean).
+    pub ramp: Option<Ramp>,
 }
 
 /// The mean of a tint's channels.
@@ -293,6 +304,8 @@ pub fn revolve_lit(path: &PathData, bounds: Rect, options: Revolve) -> Result<(V
         Point::new(axis + v.0 * factor, center_y + v.1 * factor)
     };
     let mut faces = Vec::new();
+    // With smooth shading, each face's corners and shading normal.
+    let mut smooth: Vec<(Vec<Vec<V3>>, V3)> = Vec::new();
     let mut count = 0;
     for sp in &path.subpaths {
         let mut profile = Vec::new();
@@ -345,7 +358,7 @@ pub fn revolve_lit(path: &PathData, bounds: Rect, options: Revolve) -> Result<(V
                 if normal.2 < 0.0 {
                     normal = V3(-normal.0, -normal.1, -normal.2);
                 }
-                let tint = rig.shade(normal);
+                let shade = rig.shade(normal);
                 let points: Vec<_> = vertices.iter().map(|v| project(*v)).collect();
                 if points.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
                     return Err("Revolve projection is not finite".into());
@@ -359,11 +372,32 @@ pub fn revolve_lit(path: &PathData, bounds: Rect, options: Revolve) -> Result<(V
                 if area.abs() < 1e-10 {
                     continue;
                 }
-                faces.push(Face { points, depth: vertices.iter().map(|v| v.2).sum::<f64>() / 4.0, brightness: mean(tint), tint });
+                if rig.smooth() {
+                    smooth.push((vec![vertices.to_vec()], normal));
+                }
+                faces.push(Face {
+                    points,
+                    depth: vertices.iter().map(|v| v.2).sum::<f64>() / 4.0,
+                    brightness: mean(shade.tint).min(1.0),
+                    tint: shade.tint,
+                    highlight: shade.highlight,
+                    ramp: None,
+                });
                 if faces.len() > MAX_FACES {
                     return Err("Revolve surface is too complex; reduce Segments or simplify the profile".into());
                 }
             }
+        }
+    }
+    if rig.smooth() && smooth.len() == faces.len() {
+        let projected: Vec<Vec<Vec<Point>>> = faces.iter().map(|f| vec![f.points.clone()]).collect();
+        let sources: Vec<smooth::Source> =
+            smooth.iter().zip(&projected).map(|((contours, normal), p)| smooth::Source { contours, normal: *normal, projected: p }).collect();
+        for (f, (ramp, shade)) in faces.iter_mut().zip(smooth::shade(&sources, &[], &rig, distance / 4.0)) {
+            f.ramp = ramp;
+            f.tint = shade.tint;
+            f.highlight = shade.highlight;
+            f.brightness = mean(shade.tint).min(1.0);
         }
     }
     faces.sort_by(|a, b| a.depth.total_cmp(&b.depth));

@@ -3957,3 +3957,24 @@ lighting	Light	光源
 	Delete Light	删除光源
 	Add Light	添加光源
 	More Lights	更多光源
+# 3D materials and lighting presets.
+	Material	材质
+	Highlight	高光
+	Roughness	粗糙度
+	Metallic	金属感
+	Rim Light	轮廓光
+	Cel Bands	色阶数
+	Smooth shading	平滑着色
+	Ambient Color	环境光颜色
+	Soft Touch	柔触
+	Plastic	塑料
+	Metal	金属
+	Chrome	铬
+	Rim Glow	轮廓光晕
+	Toon	卡通
+	Standard	标准
+	Studio	摄影棚
+	Top Light	顶光
+	Dramatic	戏剧性
+	Warm & Cool	冷暖光
+3d	Matte	哑光
