@@ -3815,6 +3815,11 @@ axis	Both	Ambos
 	Metallic	Metálico
 	Rim Light	Luz de contorno
 	Cel Bands	Faixas cel
+	Reflections	Reflexos
+	Outdoor	Ar livre
+	Sunset	Pôr do sol
+	Ambient Occlusion	Oclusão de ambiente
+	Contact Shadow	Sombra de contato
 	Smooth shading	Sombreamento suave
 	Ambient Color	Cor da luz ambiente
 	Soft Touch	Toque suave

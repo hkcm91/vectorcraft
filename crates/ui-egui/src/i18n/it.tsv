@@ -4377,6 +4377,11 @@ lighting	Light	Luce
 	Metallic	Metallico
 	Rim Light	Luce di contorno
 	Cel Bands	Bande cel
+	Reflections	Riflessi
+	Outdoor	Esterno
+	Sunset	Tramonto
+	Ambient Occlusion	Occlusione ambientale
+	Contact Shadow	Ombra di contatto
 	Smooth shading	Ombreggiatura morbida
 	Ambient Color	Colore luce ambiente
 	Soft Touch	Soft touch

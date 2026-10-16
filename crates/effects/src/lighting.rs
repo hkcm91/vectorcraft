@@ -4,16 +4,18 @@
 //! and `shade`): `lightColor` ("#rrggbb"), `lightSoftness` (%), `lights` (up to three more:
 //! `[{azimuth, elevation, intensity %, color, softness %}]`), `shadow` (none|below|behind),
 //! `shadowDistance` (pt), `shadowOpacity` (%) and `shadowSoftness` (%); and the material:
-//! `specular`, `roughness`, `metallic`, `rimLight` (%), `rimColor`, `shadingSteps` (0 or 2–8) and
-//! `ambientColor`, and `smoothShading` (absent: flat, as effects saved before it shade).
+//! `specular`, `roughness`, `metallic`, `rimLight` (%), `rimColor`, `shadingSteps` (0 or 2–8),
+//! `ambientColor`, `environment` (what metal and gloss reflect) and `ambientOcclusion` (%); and
+//! `smoothShading` and `contactShadow` (%). Options added later read as off for effects saved
+//! before them ([`drawing_params`]).
 
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-use vectorcraft_doc::color::{Color, Paint};
+use vectorcraft_doc::color::{BlendMode, Color, Paint};
 use vectorcraft_doc::{Appearance, AppearanceItem, Effect, FillLayer, ImageObject, Node, NodeId, NodeKind};
 use vectorcraft_geom::{Affine, PathData};
-use vectorcraft_three_d::{Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, Material, Shade, Shading, ShadowPosition};
+use vectorcraft_three_d::{Environment, Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, Material, Shade, Shading, ShadowPosition};
 
 use crate::util::{flag, num, text};
 
@@ -97,19 +99,28 @@ pub fn lighting(p: &Value) -> Lighting {
             steps: num(p, "shadingSteps", 0.0).clamp(0.0, f64::from(MAX_SHADING_STEPS)) as u32,
             ambient_color: rgb(p.get("ambientColor")),
             smooth: flag(p, "smoothShading", false),
+            occlusion: num(p, "ambientOcclusion", 0.0) / 100.0,
+            environment: Environment::parse(text(p, "environment", "gradient")).unwrap_or_default(),
         },
     }
 }
 
-/// A 3D effect's params for drawing: `raw` (as saved) over the effect's defaults, except that one
-/// saved before smooth shading existed (no `smoothShading`) keeps shading flat, as it was drawn
-/// then. New effects store the option, on.
+/// What a 3D effect saved before an option existed draws without it: the look it had then. New
+/// effects store each option (their defaults turn it on).
+fn legacy() -> [(&'static str, Value); 4] {
+    [("smoothShading", json!(false)), ("ambientOcclusion", json!(0.0)), ("contactShadow", json!(0.0)), ("environment", json!("gradient"))]
+}
+
+/// A 3D effect's params for drawing: `raw` (as saved) over the effect's defaults, except that an
+/// option saved before it existed keeps the look it had then ([`legacy`]).
 pub fn drawing_params(id: &str, raw: &Value) -> Value {
     let mut p = crate::merged_params(id, raw);
-    if raw.get("smoothShading").is_none()
-        && let Some(o) = p.as_object_mut()
-    {
-        o.insert("smoothShading".into(), json!(false));
+    if let Some(o) = p.as_object_mut() {
+        for (key, then) in legacy() {
+            if raw.get(key).is_none() {
+                o.insert(key.into(), then);
+            }
+        }
     }
     p
 }
@@ -231,6 +242,12 @@ pub fn validate(p: &Value) -> Result<(), String> {
     {
         return Err(format!("shadingSteps must be 0 to {MAX_SHADING_STEPS} (2 or more: cel bands)"));
     }
+    if let Some(e) = p.get("environment")
+        && !e.as_str().is_some_and(|e| Environment::parse(e).is_some())
+    {
+        let names: Vec<_> = Environment::ALL.iter().map(|e| e.id()).collect();
+        return Err(format!("environment must be one of {}", names.join(", ")));
+    }
     match p.get("lights") {
         None | Some(Value::Null) => Ok(()),
         Some(Value::Array(list)) if list.len() <= MAX_EXTRA_LIGHTS => list.iter().try_for_each(|l| {
@@ -265,26 +282,66 @@ pub fn shaded(c: Color, tint: [f64; 3], highlight: [f64; 3]) -> Paint {
     Paint::solid(Color::rgb(ch(r, tint[0], highlight[0]), ch(g, tint[1], highlight[1]), ch(b, tint[2], highlight[2])))
 }
 
-/// A smooth-shaded surface in flat colour `c`, drawn pixel by pixel ([`Shading::image`], the
-/// colour as [`shaded`] makes it) and clipped to the outline its faces cover, as a clip group
-/// keeping `id`. The pixels go to [`vectorcraft_doc::generated`]. `None` when the surface has no
-/// area.
-pub fn shaded_surface(id: NodeId, shading: &Shading, c: Color) -> Option<Node> {
-    let [r, g, b] = c.to_rgb();
-    let colour = |s: &Shade| {
-        let ch = |c: f32, t: f64, h: f64| (c * t as f32 + h as f32).clamp(0.0, 1.0);
-        [ch(r, s.tint[0], s.highlight[0]), ch(g, s.tint[1], s.highlight[1]), ch(b, s.tint[2], s.highlight[2])]
+/// A smooth-shaded surface in `paint`, drawn pixel by pixel ([`Shading::image`]) and clipped to
+/// the outline its faces cover, as a clip group keeping `id`. A flat colour is shaded straight
+/// into the image (as [`shaded`] colours it); another paint (a gradient, a pattern) fills the
+/// outline, multiplied by an image of the shading's tint and screened by one of its highlight.
+/// The pixels go to [`vectorcraft_doc::generated`]. `None` when the surface has no area.
+pub fn shaded_surface(id: NodeId, shading: &Shading, paint: &Paint) -> Option<Node> {
+    let image = |img: vectorcraft_three_d::ShadedImage, blend: BlendMode| -> Option<Arc<Node>> {
+        let (width, height) = (img.width, img.height);
+        let key = vectorcraft_doc::generated::put(width, height, img.rgba)?;
+        let xf = Affine::translate(img.origin.to_vec2()) * Affine::scale(img.step);
+        let mut node = Node::new(id, NodeKind::Image(Box::new(ImageObject { key, width, height, xf, link: None, placement: Default::default() })));
+        node.blend = blend;
+        Some(Arc::new(node))
     };
-    let img = shading.image(&colour)?;
-    let (width, height) = (img.width, img.height);
-    let key = vectorcraft_doc::generated::put(width, height, img.rgba)?;
-    let xf = Affine::translate(img.origin.to_vec2()) * Affine::scale(img.step);
-    let image = Node::new(id, NodeKind::Image(Box::new(ImageObject { key, width, height, xf, link: None, placement: Default::default() })));
-    let mut clip = Node::path(id, shading.outline(), Appearance::default());
+    let outline = shading.outline();
+    let mut clip = Node::path(id, outline.clone(), Appearance::default());
     if let NodeKind::Path { clipping, .. } = &mut clip.kind {
         *clipping = true;
     }
-    Some(Node::new(id, NodeKind::Group { children: vec![Arc::new(clip), Arc::new(image)], clip: true }))
+    let children = match paint.color() {
+        Some(c) => {
+            let [r, g, b] = c.to_rgb();
+            let colour = |s: &Shade| {
+                let ch = |c: f32, t: f64, h: f64| (c * t as f32 + h as f32).clamp(0.0, 1.0);
+                [ch(r, s.tint[0], s.highlight[0]), ch(g, s.tint[1], s.highlight[1]), ch(b, s.tint[2], s.highlight[2])]
+            };
+            vec![Arc::new(clip), image(shading.image(&colour)?, BlendMode::Normal)?]
+        }
+        None => {
+            let tint = |s: &Shade| s.tint.map(|t| t.clamp(0.0, 1.0) as f32);
+            let highlight = |s: &Shade| s.highlight.map(|h| h.clamp(0.0, 1.0) as f32);
+            let mut layers = shading.layers(&[&tint, &highlight])?.into_iter();
+            let fill = Node::path(id, outline, Appearance { items: vec![AppearanceItem::Fill(FillLayer::new(paint.clone()))], ..Default::default() });
+            vec![Arc::new(clip), Arc::new(fill), image(layers.next()?, BlendMode::Multiply)?, image(layers.next()?, BlendMode::Screen)?]
+        }
+    };
+    let mut group = Node::new(id, NodeKind::Group { children, clip: true });
+    // The multiply and the screen act on the paint alone, not on what lies behind.
+    group.isolate = true;
+    Some(group)
+}
+
+/// The shadows a 3D effect draws under its surface: the cast `shadow`, then the `contact` shadow
+/// (an outline and how strongly it shows) where the object meets the plane, dark and tight. `size`
+/// is the object's size, which the blurs follow.
+pub fn shadow_nodes(n: &Node, shadow: Option<PathData>, contact: Option<(PathData, f64)>, p: &Value, size: f64) -> Vec<Arc<Node>> {
+    let mut out: Vec<Arc<Node>> = shadow.map(|s| Arc::new(shadow_node(n, s, p, size))).into_iter().collect();
+    let amount = (num(p, "contactShadow", 0.0) / 100.0).clamp(0.0, 1.0);
+    if let Some((path, strength)) = contact
+        && amount > 0.0
+    {
+        let radius = (0.03 * size).clamp(0.0, 250.0);
+        let effects =
+            if radius > 0.05 { vec![Effect { id: "blur.gaussian".into(), params: json!({ "radius": radius }), visible: true }] } else { vec![] };
+        let items = vec![AppearanceItem::Fill(FillLayer::new(Paint::solid(Color::BLACK)))];
+        let mut node = Node::path(n.id, path, Appearance { items, effects, ..Default::default() });
+        node.opacity = (0.85 * amount * strength.clamp(0.0, 1.0)) as f32;
+        out.push(Arc::new(node));
+    }
+    out
 }
 
 /// The fill layers that shade a paint that isn't a flat colour (a gradient, a pattern): the paint,

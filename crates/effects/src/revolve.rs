@@ -83,11 +83,12 @@ fn surface(
     // A loaded file or a profile edited past the limits keeps drawing its source path instead
     // of crashing the frame. Commands validate the same evaluator and report its errors.
     let params = crate::lighting::drawing_params(REVOLVE, &fx.params);
-    let vectorcraft_three_d::Revolved { faces, shadow, shading } = vectorcraft_three_d::revolve_lit(path, b, revolve_options(&params)).ok()?;
-    let shadow = shadow.map(|s| Arc::new(crate::lighting::shadow_node(n, s, &params, b.width().max(b.height()))));
-    // Smooth shading in a flat colour: the surface pixel by pixel.
-    if let (Some(c), Some(shading)) = (paint.color(), &shading)
-        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, c)
+    let vectorcraft_three_d::Revolved { faces, shadow, shading, contact } =
+        vectorcraft_three_d::revolve_lit(path, b, revolve_options(&params)).ok()?;
+    let shadow = crate::lighting::shadow_nodes(n, shadow, contact, &params, b.width().max(b.height()));
+    // Smooth shading: the surface pixel by pixel.
+    if let Some(shading) = &shading
+        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, &paint)
     {
         let mut group = Node::group(n.id, shadow.into_iter().chain([Arc::new(art)]).collect());
         group.opacity = opacity;

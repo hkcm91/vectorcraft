@@ -295,7 +295,7 @@ fn material_tab_presets_set_the_material_and_lighting_presets_the_lights() {
     let mut h = Harness::with("M100 100 L200 100 L200 200 L100 200 Z", vectorcraft_effects::EXTRUDE, vec2(1400.0, 1100.0));
     h.settle();
     h.click(h.rect("Material").center());
-    for label in ["Presets", "Highlight", "Roughness", "Metallic", "Rim Light", "Cel Bands", "Smooth shading"] {
+    for label in ["Presets", "Highlight", "Roughness", "Metallic", "Reflections", "Rim Light", "Cel Bands", "Smooth shading", "Ambient Occlusion"] {
         h.rect(label);
     }
     // The defaults are the Matte preset, shown by name.
@@ -309,7 +309,7 @@ fn material_tab_presets_set_the_material_and_lighting_presets_the_lights() {
     h.app.ui.dialog.as_mut().unwrap().fields.insert("roughness".into(), json!(12.5));
     h.settle();
     h.rect("Custom");
-    // The live preview takes the material: a metal's faces are gradients with smooth shading.
+    // The live preview takes the material.
     let st = h.app.session.doc().unwrap();
     let node = st.doc.node(st.selection.objects[0]).unwrap();
     let e = node.appearance.effects.last().unwrap();

@@ -4373,6 +4373,11 @@ lighting	Light	Свет
 	Metallic	Металличность
 	Rim Light	Контровой свет
 	Cel Bands	Полосы cel
+	Reflections	Отражения
+	Outdoor	На улице
+	Sunset	Закат
+	Ambient Occlusion	Фоновое затенение
+	Contact Shadow	Контактная тень
 	Smooth shading	Плавное затенение
 	Ambient Color	Цвет рассеянного света
 	Soft Touch	Софт-тач

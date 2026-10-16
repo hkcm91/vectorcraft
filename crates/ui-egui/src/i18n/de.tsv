@@ -4332,6 +4332,11 @@ theme	Appearance	Erscheinungsbild
 	Metallic	Metallisch
 	Rim Light	Kantenlicht
 	Cel Bands	Cel-Stufen
+	Reflections	Spiegelungen
+	Outdoor	Im Freien
+	Sunset	Sonnenuntergang
+	Ambient Occlusion	Umgebungsverdeckung
+	Contact Shadow	Kontaktschatten
 	Smooth shading	Weiche Schattierung
 	Ambient Color	Umgebungslichtfarbe
 	Soft Touch	Soft-Touch

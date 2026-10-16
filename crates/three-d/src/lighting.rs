@@ -117,11 +117,108 @@ pub struct Material {
     /// Shade curved surfaces smoothly and give flat faces a gentle falloff (pixel by pixel)
     /// instead of one flat colour per face.
     pub smooth: bool,
+    /// How much creases and hollows darken (ambient occlusion, with smooth shading).
+    pub occlusion: f64,
+    /// What the surface reflects: a metal's colour, and a glossy surface's sheen at grazing angles.
+    pub environment: Environment,
 }
 
 impl Default for Material {
     fn default() -> Self {
-        Self { specular: 0.0, roughness: 0.5, metallic: 0.0, rim: 0.0, rim_color: [1.0; 3], steps: 0, ambient_color: [1.0; 3], smooth: false }
+        Self {
+            specular: 0.0,
+            roughness: 0.5,
+            metallic: 0.0,
+            rim: 0.0,
+            rim_color: [1.0; 3],
+            steps: 0,
+            ambient_color: [1.0; 3],
+            smooth: false,
+            occlusion: 0.0,
+            environment: Environment::Gradient,
+        }
+    }
+}
+
+/// The surroundings a surface reflects, our own procedural backdrops. Directions are view space
+/// (y down, z towards the viewer).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Environment {
+    /// Bright overhead fading to dark underfoot, one grey (what effects saved before the other
+    /// backdrops reflect). Glossy surfaces reflect nothing of it.
+    #[default]
+    Gradient,
+    /// A light grey studio sweep with a darker floor, a large softbox above the key light, a tall
+    /// strip on the right, a light ceiling and a soft fill behind the camera.
+    Studio,
+    /// Out of doors: a blue sky paling to the horizon over dark ground (classic chrome).
+    Outdoor,
+    /// A warm horizon under a violet sky, the sun low on the left.
+    Sunset,
+    /// Black, with thin bright strips either side and overhead: edges light up.
+    Dark,
+}
+
+impl Environment {
+    pub const ALL: [Self; 5] = [Self::Gradient, Self::Studio, Self::Outdoor, Self::Sunset, Self::Dark];
+
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Gradient => "gradient",
+            Self::Studio => "studio",
+            Self::Outdoor => "outdoor",
+            Self::Sunset => "sunset",
+            Self::Dark => "dark",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|e| e.id() == s)
+    }
+
+    /// The light arriving from direction `r` (a unit vector), linear RGB; its features soften
+    /// over `blur` (radians, from the roughness).
+    pub(crate) fn radiance(self, r: V3, blur: f64) -> [f64; 3] {
+        let up = -r.1;
+        // 0 below `edge − w`, 1 above `edge + w`, smooth between.
+        let step = |x: f64, edge: f64, w: f64| {
+            let t = ((x - edge + w) / (2.0 * w)).clamp(0.0, 1.0);
+            t * t * (3.0 - 2.0 * t)
+        };
+        let w = blur.max(0.01);
+        let angle = |d: V3| r.dot(d.unit()).clamp(-1.0, 1.0).acos();
+        let azimuth = r.0.atan2(r.2);
+        let mix = |a: [f64; 3], b: [f64; 3], t: f64| -> [f64; 3] { std::array::from_fn(|k| a[k] + (b[k] - a[k]) * t) };
+        match self {
+            Self::Gradient => [0.3 + 0.7 * (0.5 + 0.5 * up).clamp(0.0, 1.0); 3],
+            Self::Studio => {
+                // A light grey sweep, a darker floor, the lamps brighter than white.
+                let walls = 0.55 + 0.15 * up.max(0.0);
+                let floor = mix([0.28; 3], [walls; 3], step(up, -0.05, w.max(0.08)));
+                let softbox = 1.0 * (1.0 - step(angle(V3(-0.5, -0.7, 0.5)), 0.45, w));
+                let strip = 0.7 * (1.0 - step((azimuth - 1.2).abs(), 0.14, w)) * (1.0 - step(up.abs(), 0.6, w));
+                let ceiling = 0.4 * step(up, 0.85, w);
+                // A broad soft fill behind the camera: what a face turned to the viewer mirrors.
+                let front = 0.45 * step(r.2, 0.55, 0.25);
+                floor.map(|f| f + softbox + strip + ceiling + front)
+            }
+            Self::Outdoor => {
+                let sky = mix([1.0, 1.0, 1.0], [0.35, 0.55, 0.95], up.max(0.0).sqrt());
+                let ground = mix([0.42, 0.38, 0.33], [0.2, 0.18, 0.16], (-up).max(0.0).sqrt());
+                mix(ground, sky, step(up, 0.0, w))
+            }
+            Self::Sunset => {
+                let sky = mix([1.1, 0.6, 0.3], [0.25, 0.2, 0.45], up.max(0.0).sqrt());
+                let ground = mix([0.3, 0.17, 0.15], [0.12, 0.08, 0.1], (-up).max(0.0).sqrt());
+                let sun = 1.5 * (1.0 - step(angle(V3(-0.8, -0.1, 0.6)), 0.12, w));
+                mix(ground, sky, step(up, 0.0, w)).map(|c| c + sun * if up > -0.1 { 1.0 } else { 0.0 })
+            }
+            Self::Dark => {
+                let side = |centre: f64| 1.2 * (1.0 - step((azimuth - centre).abs(), 0.06, w)) * (1.0 - step(up.abs(), 0.7, w));
+                let top = 0.8 * step(up, 0.95, w);
+                [0.02 + side(-1.4) + side(1.4) + top; 3]
+            }
+        }
     }
 }
 
@@ -136,6 +233,8 @@ impl Material {
             steps: if self.steps < 2 { 0 } else { self.steps.min(MAX_SHADING_STEPS) },
             ambient_color: self.ambient_color.map(|c| finite(c, 1.0, 0.0, 1.0)),
             smooth: self.smooth,
+            occlusion: finite(self.occlusion, 0.0, 0.0, 1.0),
+            environment: self.environment,
         }
     }
     /// The Blinn-Phong exponent: from 2 (rough) to 256 (polished). Sharper would make
@@ -194,33 +293,47 @@ impl Rig {
     /// How a face with unit normal `n` (view space, towards the viewer) is shaded, the lights
     /// and the eye infinitely far away.
     pub(crate) fn shade(&self, n: V3) -> Shade {
-        self.shade_with(n, |d| d, V3(0.0, 0.0, 1.0))
+        self.shade_with(n, |d| d, V3(0.0, 0.0, 1.0), 1.0)
     }
 
     /// How the point `p` (view space, about the object's centre) with unit normal `n` is shaded,
     /// the lights and the eye `reach` from the centre.
     pub(crate) fn shade_at(&self, n: V3, p: V3, reach: f64) -> Shade {
+        self.shade_open(n, p, reach, 1.0)
+    }
+
+    /// [`Self::shade_at`] where only `open` (0–1) of the surroundings reach the point: the rest
+    /// is hidden by the surface itself (a crease, a hollow). The ambient light and reflections
+    /// dim by it, the lights by half as much.
+    pub(crate) fn shade_open(&self, n: V3, p: V3, reach: f64, open: f64) -> Shade {
         let towards = |d: V3| V3(d.0 * reach - p.0, d.1 * reach - p.1, d.2 * reach - p.2).unit();
-        self.shade_with(n, towards, V3(-p.0, -p.1, reach - p.2).unit())
+        self.shade_with(n, towards, V3(-p.0, -p.1, reach - p.2).unit(), open)
+    }
+
+    /// The material's ambient occlusion strength, 0 when it doesn't darken creases.
+    pub(crate) fn occlusion(&self) -> f64 {
+        if self.on { self.material.occlusion } else { 0.0 }
     }
 
     /// The shade of normal `n`, each light's direction `d` turned into the direction towards it by
     /// `towards`, seen from direction `view`.
-    fn shade_with(&self, n: V3, towards: impl Fn(V3) -> V3, view: V3) -> Shade {
+    fn shade_with(&self, n: V3, towards: impl Fn(V3) -> V3, view: V3, open: f64) -> Shade {
         if !self.on {
             return Shade::NONE;
         }
         let m = &self.material;
         let shininess = m.shininess();
+        let open = open.clamp(0.0, 1.0);
+        let lit = 0.5 + 0.5 * open;
         // A metal's own colour comes from its reflections, not from diffuse light.
         let diffuse_share = 1.0 - 0.85 * m.metallic;
-        let mut diffuse = m.ambient_color.map(|c| self.ambient * c);
+        let mut diffuse = m.ambient_color.map(|c| self.ambient * c * open);
         let mut spec = [0.0; 3];
         for (dir, intensity, color, softness) in &self.lights {
             let dir = &towards(*dir);
             let wrap = band(((n.dot(*dir) + softness) / (1.0 + softness)).max(0.0), m.steps);
             for (ch, k) in diffuse.iter_mut().zip(color) {
-                *ch += intensity * k * wrap;
+                *ch += intensity * k * wrap * lit;
             }
             if m.specular > 0.0 && n.dot(*dir) > 0.0 {
                 let h = V3(dir.0 + view.0, dir.1 + view.1, dir.2 + view.2).unit();
@@ -234,17 +347,28 @@ impl Rig {
             }
         }
         let mut tint = diffuse.map(|v| v.clamp(0.0, 1.0) * diffuse_share);
+        // What the surface mirrors: the view reflected about the normal, seen in the
+        // environment, blurred by the roughness.
+        let nv = n.dot(view);
+        let r = V3(2.0 * nv * n.0 - view.0, 2.0 * nv * n.1 - view.1, 2.0 * nv * n.2 - view.2);
+        let blur = 0.02 + 0.6 * m.roughness * m.roughness;
+        let mirrored = || m.environment.radiance(r, blur).map(|c| band(c.clamp(0.0, 1.5), m.steps) * open);
         if m.metallic > 0.0 {
-            // A studio reflection: what the surface mirrors, bright overhead, dark underfoot.
-            let nv = n.dot(view);
-            let r = V3(2.0 * nv * n.0 - view.0, 2.0 * nv * n.1 - view.1, 2.0 * nv * n.2 - view.2);
-            let sky = band((0.5 - 0.5 * r.1).clamp(0.0, 1.0), m.steps);
-            let reflection = m.metallic * (0.3 + 0.7 * sky);
-            for (t, s) in tint.iter_mut().zip(spec) {
-                *t += reflection + m.metallic * s;
+            let reflection = mirrored();
+            for ((t, s), e) in tint.iter_mut().zip(spec).zip(reflection) {
+                *t += m.metallic * (e + s);
             }
         }
         let mut highlight = spec.map(|s| s * (1.0 - m.metallic));
+        if m.environment != Environment::Gradient && m.specular > 0.0 && m.metallic < 1.0 {
+            // A glossy surface mirrors its surroundings faintly, most at grazing angles (Schlick's
+            // Fresnel term for a plastic), less the rougher it is.
+            let fresnel = 0.04 + 0.96 * (1.0 - nv.clamp(0.0, 1.0)).powi(5);
+            let share = m.specular * (1.0 - m.metallic) * (1.0 - m.roughness).powi(2) * (0.08 + 0.6 * fresnel);
+            for (h, e) in highlight.iter_mut().zip(mirrored()) {
+                *h += share * e;
+            }
+        }
         if m.rim > 0.0 {
             let mut edge = (1.0 - n.dot(view).clamp(0.0, 1.0)).powi(3);
             if m.steps >= 2 {
@@ -331,6 +455,83 @@ pub(crate) fn cast(faces: &[Vec<Vec<V3>>], light: V3, position: ShadowPosition, 
         }
     }
     (!bp.elements().is_empty()).then(|| PathData::from_bezpath(&bp))
+}
+
+/// How far above the shadow's plane a contact shadow gathers the object, as a share of its size.
+const CONTACT_BAND: f64 = 0.08;
+
+/// The contact shadow: the parts of `faces` (view-space contours) within a thin band of the plane
+/// the shadow falls on (at `position`, `distance` beyond the object), dropped straight onto it and
+/// projected by `project`: the footprint where the object meets the ground, as one outline whose
+/// nonzero fill is the shadow, and how strongly it shows (1 resting on the plane, fading to 0 as
+/// the object lifts off it by the band). None without a plane or with the object clear of it.
+pub(crate) fn contact(faces: &[Vec<Vec<V3>>], position: ShadowPosition, distance: f64, project: impl Fn(V3) -> Point) -> Option<(PathData, f64)> {
+    let n = shadow_plane(position)?;
+    let points = faces.iter().flatten().flatten();
+    let lowest = points.clone().map(|v| v.dot(n)).fold(f64::INFINITY, f64::min);
+    let (lo, hi) = points.fold((V3(f64::MAX, f64::MAX, f64::MAX), V3(f64::MIN, f64::MIN, f64::MIN)), |(a, b), v| {
+        (V3(a.0.min(v.0), a.1.min(v.1), a.2.min(v.2)), V3(b.0.max(v.0), b.1.max(v.1), b.2.max(v.2)))
+    });
+    if !lowest.is_finite() {
+        return None;
+    }
+    let size = (hi.0 - lo.0).max(hi.1 - lo.1).max(hi.2 - lo.2).max(1e-9);
+    let band = CONTACT_BAND * size;
+    let distance = if distance.is_finite() { distance.max(0.0) } else { 0.0 };
+    let strength = 1.0 - distance / band;
+    if strength <= 0.0 {
+        return None;
+    }
+    let (plane, top) = (lowest - distance, lowest + band);
+    let mut bp = BezPath::new();
+    let mut count = 0usize;
+    for face in faces {
+        // Each contour cut to the band (Sutherland–Hodgman against one plane), then dropped.
+        let dropped: Vec<Vec<Point>> = face
+            .iter()
+            .map(|c| {
+                let mut out = vec![];
+                for (a, b) in c.iter().zip(c.iter().cycle().skip(1)).take(c.len()) {
+                    let (da, db) = (top - a.dot(n), top - b.dot(n));
+                    if da >= 0.0 {
+                        out.push(*a);
+                    }
+                    if (da >= 0.0) != (db >= 0.0) {
+                        let t = da / (da - db);
+                        out.push(V3(a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t, a.2 + (b.2 - a.2) * t));
+                    }
+                }
+                out.iter()
+                    .map(|v| {
+                        let h = v.dot(n) - plane;
+                        project(V3(v.0 - n.0 * h, v.1 - n.1 * h, v.2 - n.2 * h))
+                    })
+                    .collect()
+            })
+            .filter(|c: &Vec<Point>| c.len() >= 3)
+            .collect();
+        count += dropped.iter().map(Vec::len).sum::<usize>();
+        if count > MAX_SHADOW_POINTS {
+            return None;
+        }
+        let outer = dropped.iter().map(|c| area(c)).max_by(|a, b| a.abs().total_cmp(&b.abs())).unwrap_or(0.0);
+        if outer.abs() < 1e-9 {
+            continue;
+        }
+        for c in &dropped {
+            if c.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
+                return None;
+            }
+            let mut pts: Box<dyn Iterator<Item = &Point>> = if outer > 0.0 { Box::new(c.iter()) } else { Box::new(c.iter().rev()) };
+            let Some(first) = pts.next() else { continue };
+            bp.move_to(*first);
+            for p in pts {
+                bp.line_to(*p);
+            }
+            bp.close_path();
+        }
+    }
+    (!bp.elements().is_empty()).then(|| (PathData::from_bezpath(&bp), strength))
 }
 
 /// The signed area of a polygon (positive: clockwise on screen, y down).
@@ -430,5 +631,81 @@ mod tests {
         let b = behind.bounds().unwrap();
         assert!(b.x0 < -1.0 && b.y0 > -11.0, "pushed away from a light at the upper right: {b:?}");
         assert!(cast(&[square], direction(0.0, 0.0), ShadowPosition::None, 0.0, flat).is_none());
+    }
+
+    #[test]
+    fn backdrops_light_a_metal_and_give_gloss_a_sheen() {
+        let main = Light::default();
+        let up = V3(0.0, -1.0, 1.0).unit();
+        let down = V3(0.0, 1.0, 1.0).unit();
+        // Every backdrop is finite and lit somewhere, over the whole sphere of directions.
+        for e in Environment::ALL {
+            let mut brightest: f64 = 0.0;
+            for i in 0..24 {
+                for j in 0..12 {
+                    let (a, b) = (i as f64 * 15f64.to_radians(), (j as f64 * 15.0 - 82.5).to_radians());
+                    let c = e.radiance(V3(b.cos() * a.sin(), -b.sin(), b.cos() * a.cos()), 0.05);
+                    assert!(c.iter().all(|v| v.is_finite() && *v >= 0.0 && *v <= 3.0), "{e:?} {c:?}");
+                    brightest = brightest.max(c[0]).max(c[1]).max(c[2]);
+                }
+            }
+            assert!(brightest > 0.8, "{e:?}");
+            assert_eq!(Environment::parse(e.id()), Some(e));
+        }
+        // Out of doors the sky above is blue and the ground below darker.
+        let sky = Environment::Outdoor.radiance(V3(0.0, -0.7, 0.7).unit(), 0.05);
+        let ground = Environment::Outdoor.radiance(V3(0.0, 0.7, 0.7).unit(), 0.05);
+        assert!(sky[2] > sky[0] && sky[2] > ground[2]);
+        // A metal reflects its backdrop: brighter facing the studio's softbox than the floor.
+        let metal = Material { specular: 1.0, roughness: 0.2, metallic: 1.0, environment: Environment::Studio, ..Material::default() };
+        let rig = Rig::new(main, &[], 0.2, metal, true);
+        assert!(rig.shade(up).tint[0] > rig.shade(down).tint[0]);
+        // The plain gradient is the old studio reflection: glossy plastic mirrors nothing of it…
+        let plastic = Material { specular: 0.9, roughness: 0.2, ..Material::default() };
+        let grazing = V3(0.95, 0.0, 0.3).unit();
+        assert!(Rig::new(main, &[], 0.2, plastic, true).shade(grazing).highlight.iter().all(|h| *h < 1e-9));
+        // …a real backdrop gives it a sheen, fainter the rougher it is.
+        let unlit = Light { intensity: 0.0, ..main };
+        let sheen = |roughness: f64| {
+            let rig = Rig::new(unlit, &[], 0.2, Material { environment: Environment::Studio, roughness, ..plastic }, true);
+            (rig.shade(V3(0.0, 0.0, 1.0)).highlight[0], rig.shade(grazing).highlight[0])
+        };
+        let (face_on, edge) = sheen(0.2);
+        assert!(face_on > 0.0 && edge > 0.0, "{face_on} {edge}");
+        assert!(sheen(0.9).0 < face_on);
+    }
+
+    #[test]
+    fn occlusion_dims_the_ambient_light_and_reflections() {
+        let main = Light { azimuth: 0.0, elevation: 0.0, intensity: 0.5, ..Light::default() };
+        let rig = Rig::new(main, &[], 0.4, Material::default(), true);
+        let n = V3(0.0, 0.0, 1.0);
+        let open = rig.shade_open(n, V3::default(), 100.0, 1.0).tint[0];
+        let hidden = rig.shade_open(n, V3::default(), 100.0, 0.0).tint[0];
+        assert!((open - rig.shade_at(n, V3::default(), 100.0).tint[0]).abs() < 1e-12);
+        // Open: ambient 0.4 and the light head-on at 0.5. Fully hidden: no ambient light, the
+        // light at half strength.
+        assert!((open - 0.9).abs() < 1e-9 && (hidden - 0.25).abs() < 1e-9, "{open} {hidden}");
+    }
+
+    #[test]
+    fn a_contact_shadow_gathers_what_rests_on_the_ground() {
+        // A cube of side 10 standing on the wall plane behind it (z from 0 to 10).
+        let face = |pts: [(f64, f64, f64); 4]| vec![pts.iter().map(|(x, y, z)| V3(*x, *y, *z)).collect::<Vec<_>>()];
+        let cube = vec![
+            face([(0.0, 0.0, 0.0), (10.0, 0.0, 0.0), (10.0, 10.0, 0.0), (0.0, 10.0, 0.0)]),
+            face([(0.0, 0.0, 10.0), (10.0, 0.0, 10.0), (10.0, 10.0, 10.0), (0.0, 10.0, 10.0)]),
+            face([(0.0, 0.0, 0.0), (10.0, 0.0, 0.0), (10.0, 0.0, 10.0), (0.0, 0.0, 10.0)]),
+        ];
+        let flat = |v: V3| Point::new(v.0, v.1);
+        let (path, strength) = contact(&cube, ShadowPosition::Behind, 0.0, flat).unwrap();
+        assert_eq!(strength, 1.0);
+        let b = path.bounds().unwrap();
+        assert!((b.width() - 10.0).abs() < 1e-9 && (b.height() - 10.0).abs() < 1e-9, "the footprint: {b:?}");
+        // Lifted off the plane it fades, and beyond the band it is gone.
+        let (_, half) = contact(&cube, ShadowPosition::Behind, 0.4, flat).unwrap();
+        assert!((half - 0.5).abs() < 1e-9, "{half}");
+        assert!(contact(&cube, ShadowPosition::Behind, 1.0, flat).is_none());
+        assert!(contact(&cube, ShadowPosition::None, 0.0, flat).is_none());
     }
 }

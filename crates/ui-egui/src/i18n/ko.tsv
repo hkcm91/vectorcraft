@@ -4341,6 +4341,11 @@ lighting	Light	광원
 	Metallic	금속성
 	Rim Light	림 라이트
 	Cel Bands	셀 단계
+	Reflections	반사
+	Outdoor	실외
+	Sunset	노을
+	Ambient Occlusion	앰비언트 오클루전
+	Contact Shadow	접지 그림자
 	Smooth shading	부드러운 음영
 	Ambient Color	주변광 색상
 	Soft Touch	소프트 터치

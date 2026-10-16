@@ -4357,6 +4357,11 @@ lighting	Light	Світло
 	Metallic	Металевість
 	Rim Light	Контурне світло
 	Cel Bands	Смуги cel
+	Reflections	Відбиття
+	Outdoor	Надворі
+	Sunset	Захід сонця
+	Ambient Occlusion	Фонове затінення
+	Contact Shadow	Контактна тінь
 	Smooth shading	Плавне затінення
 	Ambient Color	Колір розсіяного світла
 	Soft Touch	Софт-тач

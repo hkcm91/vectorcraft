@@ -138,11 +138,11 @@ pub fn validate_solid(n: &Node, id: &str, p: &Value) -> Result<(), String> {
 }
 
 /// One surface as a group with the paint's opacity and blend mode (so overlapping facets don't
-/// add up their transparency): with smooth shading in a flat colour the surface pixel by pixel,
-/// otherwise each facet a path shaded from `paint`.
+/// add up their transparency): with smooth shading the surface pixel by pixel, otherwise each
+/// facet a path shaded from `paint`.
 fn surface(n: &Node, shaded: Shaded, paint: &Paint, opacity: f32, blend: BlendMode) -> Node {
-    if let (Some(c), Some(shading)) = (paint.color(), &shaded.shading)
-        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, c)
+    if let Some(shading) = &shaded.shading
+        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, paint)
     {
         let mut group = Node::group(n.id, vec![Arc::new(art)]);
         group.opacity = opacity;
@@ -208,24 +208,32 @@ fn art_for(n: &Node, fx: &Effect, path: &PathData, rule: FillRule, items: &[&App
         // the shadow is the whole object's, behind them all.
         let mut out = vec![];
         let mut shadow = vec![];
+        let mut contact = vec![];
+        let mut strength: f64 = 0.0;
         for item in items {
             let (paint, opacity, blend) = paint_of(item);
             let mut s = facets(ROTATE, &region(path, rule, item), b, &p).ok()?;
             shadow.extend(s.shadow.take().into_iter().flat_map(|s| s.subpaths));
+            if let Some((c, k)) = s.contact.take() {
+                contact.extend(c.subpaths);
+                strength = strength.max(k);
+            }
             out.push(Arc::new(surface(n, s, &paint, opacity, blend)));
         }
-        if !shadow.is_empty() {
-            out.insert(0, Arc::new(crate::lighting::shadow_node(n, PathData::new(shadow), &p, size)));
-        }
-        return Some(out);
+        let shadow = (!shadow.is_empty()).then(|| PathData::new(shadow));
+        let contact = (!contact.is_empty()).then(|| (PathData::new(contact), strength));
+        let mut all = crate::lighting::shadow_nodes(n, shadow, contact, &p, size);
+        all.extend(out);
+        return Some(all);
     }
     let item = items.iter().rev().find(|i| matches!(i, AppearanceItem::Fill(_))).or_else(|| items.last())?;
     let (paint, opacity, blend) = paint_of(item);
     // A loaded file or a shape edited past the limits keeps drawing its source path instead of
     // failing the frame; commands validate the same evaluator and report its errors.
     let mut s = facets(&fx.id, path, b, &p).ok()?;
-    let shadow = s.shadow.take().map(|sh| Arc::new(crate::lighting::shadow_node(n, sh, &p, size)));
-    Some(shadow.into_iter().chain([Arc::new(surface(n, s, &paint, opacity, blend))]).collect())
+    let mut all = crate::lighting::shadow_nodes(n, s.shadow.take(), s.contact.take(), &p, size);
+    all.push(Arc::new(surface(n, s, &paint, opacity, blend)));
+    Some(all)
 }
 
 fn geometry(path: &PathData, fx: &[Effect], ctx: &GeomContext) -> PathData {

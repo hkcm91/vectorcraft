@@ -247,6 +247,8 @@ pub struct Shaded {
     pub facets: Vec<Facet>,
     pub shadow: Option<PathData>,
     pub shading: Option<Shading>,
+    /// The contact shadow where the solid meets the shadow's plane, and how strongly it shows.
+    pub contact: Option<(PathData, f64)>,
 }
 
 impl Facet {
@@ -590,7 +592,8 @@ impl Builder<'_> {
         }
         self.facets.sort_by(|a, b| a.depth.total_cmp(&b.depth));
         let shadow = lighting::cast(&self.casters, camera.light, camera.view.shadow, camera.view.shadow_distance, |v| camera.project(v));
-        Shaded { facets: self.facets, shadow, shading }
+        let contact = lighting::contact(&self.casters, camera.view.shadow, camera.view.shadow_distance, |v| camera.project(v));
+        Shaded { facets: self.facets, shadow, shading, contact }
     }
 }
 

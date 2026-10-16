@@ -1,6 +1,6 @@
 # Effects parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-15 · **Change:** minor (3D and Materials: materials, lighting and material presets, smooth shading, ~32% → ~40% (estimated); coloured, soft lights and cast shadows, ~25% → ~32%; raster effects after a pattern, radial or freeform gradient fill export at their place and size, #1536; score unchanged; 3D and Materials on outlined type and other shapes of many small curves, #1481; Twist 0° to 360°, #1524; twisted walls keep their faces, #1525; score unchanged; 3D and Materials: Inflate takes Twist, Taper and Cap; score unchanged) · **Target:** Adobe Illustrator 2026 (30.x)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-15 · **Change:** minor (3D and Materials: procedural reflections (studio, outdoor, sunset, dark), ambient occlusion and contact shadows, gradients and patterns shaded per pixel, ~40% → ~42% (estimated); materials, lighting and material presets, smooth shading, ~32% → ~40% (estimated); coloured, soft lights and cast shadows, ~25% → ~32%; raster effects after a pattern, radial or freeform gradient fill export at their place and size, #1536; score unchanged; 3D and Materials on outlined type and other shapes of many small curves, #1481; Twist 0° to 360°, #1524; twisted walls keep their faces, #1525; score unchanged; 3D and Materials: Inflate takes Twist, Taper and Cap; score unchanged) · **Target:** Adobe Illustrator 2026 (30.x)
 
 Every entry of Illustrator's Effect menu, by its public feature name, against VectorCraft's effects catalogue
 (`effect_catalog()` in `crates/effects/src/lib.rs`) and the Effect menu built from it
@@ -13,7 +13,7 @@ Part of [target-app-parity.md](target-app-parity.md); open work is in [gaps.md](
 |---|---:|---:|---:|---:|
 | Illustrator effects (vector and stylize) | 50 | 44 | 88% | 6–10 |
 | Photoshop effects (raster, Effect Gallery) | 57 | 29 | 51% | 23–39 |
-| 3D and Materials | 4 (+3 Classic) | 4 (initial: Extrude & Bevel, Revolve, Inflate, Rotate; lights, shadows, materials, presets, smooth shading) | ~40% | 15–30 |
+| 3D and Materials | 4 (+3 Classic) | 4 (initial: Extrude & Bevel, Revolve, Inflate, Rotate; lights, shadows, materials, presets, smooth shading, reflections, ambient occlusion, contact shadows) | ~42% | 14–28 |
 | Beyond Illustrator: Effect › Color Adjustments (6), effect plug-ins (WebAssembly) | — | 6 + plug-ins | — | — |
 
 ## Illustrator effects
@@ -100,6 +100,7 @@ Revolve caps, 3D Classic, Turntable, 3D export) is 15–30 h.
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-13 | minor | Raster effects (blur, shadow, glow, grain) drawn after a pattern, radial or freeform gradient fill export at their place and size (#1541, fixes #1536); scores unchanged (estimated) |
+| 2026-10-15 | minor | 3D and Materials: procedural reflections (studio, outdoor, sunset, dark), ambient occlusion and contact shadows, gradients and patterns shaded per pixel ([three-d.md](three-d.md#materials)); ~40% → ~42%, 15–30 → 14–28 h (estimated) |
 | 2026-10-15 | minor | 3D and Materials: a Material tab (highlight, roughness, metallic, rim light, cel bands) with eight presets, seven lighting presets and an ambient colour, and smooth shading (per pixel: an image shaded over interpolated normals, clipped to the vector outline; Inflate's normals exact from its height field) ([three-d.md](three-d.md#materials)); ~32% → ~40%, 20–38 → 15–30 h (estimated) |
 | 2026-10-15 | minor | 3D and Materials: the main light takes a colour and a softness, up to three more lights, and a shadow below or behind the object with distance, opacity and softness ([three-d.md](three-d.md#lighting-and-shadows)); ~25% → ~32%, 25–45 → 20–38 h (estimated) |
 | 2026-10-13 | minor | 3D and Materials: outlined words and other shapes of many small curves take Rotate, Extrude & Bevel and Inflate (curves are sampled by a tolerance; Rotate takes up to 65,536 outline points; #1481); Extrude & Bevel's Twist runs 0° to 360° as the public panel reference gives it, a negative value drawing untwisted (#1524); a twisted extrusion keeps its walls, which were dropped from about 45° (#1525); details in [three-d.md](three-d.md); 3D stays ~25%, 25–45 h (estimated) |

@@ -20,6 +20,10 @@ const SUB: usize = 2;
 const PAD: usize = 3;
 /// How far each face is filled past its edges, in samples.
 const GROW: f64 = 0.35;
+/// The most colourings [`Shading::layers`] makes at once.
+pub const MAX_LAYERS: usize = 2;
+/// Ambient occlusion's samples about each pixel.
+const OCCLUSION_SAMPLES: usize = 32;
 
 /// One face to shade: its projected contours, and at each of their points (in order) the
 /// smoothed normal and the view-space position; `normal` is the face's own.
@@ -39,6 +43,9 @@ pub struct Shading {
     reach: f64,
     polys: Vec<Poly>,
 }
+
+/// How a pixel's shade becomes its colour (0–1 RGB).
+pub type Colouring<'a> = &'a (dyn Fn(&Shade) -> [f32; 3] + Sync);
 
 /// A shading image: `width` × `height` straight RGBA pixels, row by row, its top left corner at
 /// `origin` in the document, each pixel `step` points across.
@@ -218,7 +225,18 @@ impl Shading {
 
     /// The surface shaded pixel by pixel, each pixel's colour `colour` of its shade (0–1 RGB).
     /// `None` for a surface with no area. Rows are shared out among the cores.
-    pub fn image(&self, colour: &(dyn Fn(&Shade) -> [f32; 3] + Sync)) -> Option<ShadedImage> {
+    pub fn image(&self, colour: Colouring) -> Option<ShadedImage> {
+        self.layers(&[colour])?.into_iter().next()
+    }
+
+    /// [`Self::image`] for up to [`MAX_LAYERS`] colourings of the same shading at once (the
+    /// shading is worked out once), in their order. `None` for a surface with no area or no
+    /// colouring.
+    pub fn layers(&self, colours: &[Colouring]) -> Option<Vec<ShadedImage>> {
+        let colours = colours.get(..colours.len().min(MAX_LAYERS))?;
+        if colours.is_empty() {
+            return None;
+        }
         let r = self.bounds()?;
         let side = r.width().max(r.height());
         if side <= 1e-9 {
@@ -270,43 +288,75 @@ impl Shading {
                 }
             }
         });
+        let centre = |px: usize, py: usize| ((px * SUB) as f64 + SUB as f64 / 2.0, (py * SUB) as f64 + SUB as f64 / 2.0);
+        let owners = |px: usize, py: usize| -> [u32; SUB * SUB] {
+            std::array::from_fn(|s| samples.get((py * SUB + s / SUB) * sw + px * SUB + s % SUB).map_or(u32::MAX, |v| v.1))
+        };
+        // How open each pixel is to its surroundings (1 without ambient occlusion).
+        let strength = self.rig.occlusion();
+        let open = if strength > 0.0 {
+            // Each pixel's normal and position, from the piece most of its samples show.
+            let mut surface = vec![None; w * h];
+            bands(&mut surface, w, &|first, band: &mut [Option<(V3, V3)>]| {
+                for (k, out) in band.iter_mut().enumerate() {
+                    let (px, py) = (k % w, first + k / w);
+                    let ids = owners(px, py);
+                    let id = ids.iter().copied().filter(|i| *i != u32::MAX).max_by_key(|i| ids.iter().filter(|j| *j == i).count());
+                    if let Some(piece) = id.and_then(|i| pieces.get(i as usize)) {
+                        let (x, y) = centre(px, py);
+                        let [nx, ny, nz, qx, qy, qz] = piece.at(x, y);
+                        *out = Some((V3(nx, ny, nz).unit(), V3(qx, qy, qz)));
+                    }
+                }
+            });
+            // The reach of the occlusion: a quarter of the object's half extent.
+            let reach = self.reach / 24.0;
+            occlusion(&surface, w, h, reach / step, reach, strength)
+        } else {
+            vec![1.0; w * h]
+        };
         let banded = self.rig.banded();
-        let shade_at = |piece: &Piece, x: f64, y: f64| -> [f32; 3] {
+        let shade_at = |piece: &Piece, x: f64, y: f64, open: f64| -> Shade {
             let [nx, ny, nz, px, py, pz] = piece.at(x, y);
-            let n = V3(nx, ny, nz).unit();
-            colour(&self.rig.shade_at(n, V3(px, py, pz), self.reach))
+            self.rig.shade_open(V3(nx, ny, nz).unit(), V3(px, py, pz), self.reach, open)
         };
         // Each pixel: one shade where its samples share a piece (a cel band's edge sampled too),
         // else its samples' mean. Alpha 0 marks a pixel no sample covers.
-        let mut pixels = vec![[0u8; 4]; w * h];
-        bands(&mut pixels, w, &|first, band: &mut [[u8; 4]]| {
+        let mut pixels = vec![[[0u8; 4]; MAX_LAYERS]; w * h];
+        bands(&mut pixels, w, &|first, band: &mut [[[u8; 4]; MAX_LAYERS]]| {
             for (k, out) in band.iter_mut().enumerate() {
                 let (px, py) = (k % w, first + k / w);
-                let ids: [u32; SUB * SUB] =
-                    std::array::from_fn(|s| samples.get((py * SUB + s / SUB) * sw + px * SUB + s % SUB).map_or(u32::MAX, |v| v.1));
+                let ids = owners(px, py);
                 if ids.iter().all(|i| *i == u32::MAX) {
                     continue;
                 }
-                let mut sum = [0.0f32; 3];
+                let o = open.get(py * w + px).copied().unwrap_or(1.0);
+                let mut sum = [[0.0f32; 3]; MAX_LAYERS];
                 let mut count = 0.0f32;
+                let mut add = |shade: &Shade| {
+                    for (layer, c) in sum.iter_mut().zip(colours) {
+                        for (t, v) in layer.iter_mut().zip(c(shade)) {
+                            *t += v;
+                        }
+                    }
+                    count += 1.0;
+                };
                 if !banded && ids.iter().all(|i| *i == ids[0]) {
                     if let Some(piece) = pieces.get(ids[0] as usize) {
-                        sum = shade_at(piece, (px * SUB) as f64 + SUB as f64 / 2.0, (py * SUB) as f64 + SUB as f64 / 2.0);
-                        count = 1.0;
+                        let (x, y) = centre(px, py);
+                        add(&shade_at(piece, x, y, o));
                     }
                 } else {
                     for (s, id) in ids.iter().enumerate() {
                         let Some(piece) = pieces.get(*id as usize) else { continue };
-                        let c = shade_at(piece, (px * SUB + s % SUB) as f64 + 0.5, (py * SUB + s / SUB) as f64 + 0.5);
-                        for (t, v) in sum.iter_mut().zip(c) {
-                            *t += v;
-                        }
-                        count += 1.0;
+                        add(&shade_at(piece, (px * SUB + s % SUB) as f64 + 0.5, (py * SUB + s / SUB) as f64 + 0.5, o));
                     }
                 }
                 if count > 0.0 {
                     let q = |v: f32| ((v / count).clamp(0.0, 1.0) * 255.0).round() as u8;
-                    *out = [q(sum[0]), q(sum[1]), q(sum[2]), 255];
+                    for (slot, layer) in out.iter_mut().zip(&sum) {
+                        *slot = [q(layer[0]), q(layer[1]), q(layer[2]), 255];
+                    }
                 }
             }
         });
@@ -315,33 +365,42 @@ impl Shading {
             let before = pixels.clone();
             let at = |x: isize, y: isize| (x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h).then(|| before[y as usize * w + x as usize]);
             for (k, out) in pixels.iter_mut().enumerate() {
-                if out[3] != 0 {
+                if out[0][3] != 0 {
                     continue;
                 }
                 let (px, py) = ((k % w) as isize, (k / w) as isize);
-                let mut sum = [0u32; 3];
+                let mut sum = [[0u32; 3]; MAX_LAYERS];
                 let mut count = 0;
                 for (dx, dy) in [(-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)] {
-                    if let Some(p) = at(px + dx, py + dy).filter(|p| p[3] != 0) {
-                        for (s, v) in sum.iter_mut().zip(p) {
-                            *s += u32::from(v);
+                    if let Some(p) = at(px + dx, py + dy).filter(|p| p[0][3] != 0) {
+                        for (layer, src) in sum.iter_mut().zip(p) {
+                            for (s, v) in layer.iter_mut().zip(src) {
+                                *s += u32::from(v);
+                            }
                         }
                         count += 1;
                     }
                 }
                 if count > 0 {
                     let q = |s: u32| ((s + count / 2) / count) as u8;
-                    *out = [q(sum[0]), q(sum[1]), q(sum[2]), 255];
+                    for (slot, layer) in out.iter_mut().zip(&sum) {
+                        *slot = [q(layer[0]), q(layer[1]), q(layer[2]), 255];
+                    }
                 }
             }
         }
-        Some(ShadedImage {
-            origin,
-            step,
-            width: u32::try_from(w).ok()?,
-            height: u32::try_from(h).ok()?,
-            rgba: pixels.into_iter().flatten().collect(),
-        })
+        let (width, height) = (u32::try_from(w).ok()?, u32::try_from(h).ok()?);
+        Some(
+            (0..colours.len())
+                .map(|l| ShadedImage {
+                    origin,
+                    step,
+                    width,
+                    height,
+                    rgba: pixels.iter().flat_map(|p| p.get(l).copied().unwrap_or_default()).collect(),
+                })
+                .collect(),
+        )
     }
 
     /// The faces as pieces in sample space: a face without holes with its corners' values blended
@@ -409,6 +468,77 @@ impl Shading {
         }
         out
     }
+}
+
+/// How open each pixel of a surface is (1: nothing of the surface over it; less in creases and
+/// hollows), from each pixel's normal and position (`None` where the surface isn't): screen-space
+/// ambient occlusion. Samples spiral out to `radius` pixels (`reach` points in view space); a
+/// sample whose point rises above the pixel's tangent plane, near enough, hides part of the sky.
+/// `strength` (0–1) scales the darkening.
+fn occlusion(surface: &[Option<(V3, V3)>], w: usize, h: usize, radius: f64, reach: f64, strength: f64) -> Vec<f64> {
+    // A golden-angle spiral: every sample its own direction and distance, so no pattern repeats.
+    // None nearer than a third of the radius: up close the faces' flat facets, not the surface's
+    // shape, decide what rises above the (smooth) tangent plane.
+    let offsets: Vec<(isize, isize)> = (0..OCCLUSION_SAMPLES)
+        .map(|k| {
+            let t = (k as f64 + 0.5) / OCCLUSION_SAMPLES as f64;
+            let a = k as f64 * 2.399_963_229_728_653;
+            let r = radius.max(3.0) * (0.35 + 0.65 * t);
+            ((r * a.cos()).round() as isize, (r * a.sin()).round() as isize)
+        })
+        .collect();
+    let at = |x: isize, y: isize| -> Option<(V3, V3)> {
+        if x < 0 || y < 0 || x as usize >= w || y as usize >= h {
+            return None;
+        }
+        surface.get(y as usize * w + x as usize).copied().flatten()
+    };
+    let mut open = vec![1.0; w * h];
+    bands(&mut open, w, &|first, band: &mut [f64]| {
+        for (k, out) in band.iter_mut().enumerate() {
+            let (px, py) = ((k % w) as isize, (first + k / w) as isize);
+            let Some((n, p)) = at(px, py) else { continue };
+            let mut hidden = 0.0;
+            for (dx, dy) in &offsets {
+                let Some((_, q)) = at(px + dx, py + dy) else { continue };
+                let v = q.sub(p);
+                let d = v.dot(v).sqrt();
+                if d < 1e-9 {
+                    continue;
+                }
+                // Above the tangent plane (less a little for the surface's own curve), fading
+                // with distance.
+                let rise = (n.dot(v) / d - 0.1).max(0.0);
+                hidden += rise * (1.0 - d / (2.0 * reach)).max(0.0);
+            }
+            // Gained so that a deep crease (half the samples rising steeply) reads fully occluded.
+            let occluded = (6.0 * hidden / OCCLUSION_SAMPLES as f64).clamp(0.0, 1.0);
+            *out = 1.0 - strength * occluded;
+        }
+    });
+    // A blur, across then down, over the surface alone: the samples are few.
+    const BLUR: isize = 6;
+    for (dx, dy) in [(1isize, 0isize), (0, 1)] {
+        let before = open.clone();
+        for (k, out) in open.iter_mut().enumerate() {
+            let (px, py) = ((k % w) as isize, (k / w) as isize);
+            if at(px, py).is_none() {
+                continue;
+            }
+            let (mut sum, mut count) = (0.0, 0.0);
+            for t in -BLUR..=BLUR {
+                let (x, y) = (px + dx * t, py + dy * t);
+                if at(x, y).is_some() {
+                    sum += before[y as usize * w + x as usize];
+                    count += 1.0;
+                }
+            }
+            if count > 0.0 {
+                *out = sum / count;
+            }
+        }
+    }
+    open
 }
 
 /// `f` over `data` cut into bands of whole rows (`row` items each), given each band's first row,
@@ -630,5 +760,42 @@ mod tests {
         let lit = image.rgba[(c * w + c + (w * 3 / 8)) * 4];
         assert_eq!(lit, 128, "{lit}");
         assert!(Shading::new(rig(Material::default()), 1.0, vec![]).image(&grey).is_none());
+    }
+
+    #[test]
+    fn occlusion_darkens_a_valley_but_not_a_plane() {
+        // A valley: two slopes meeting in a crease at x = 0, the deepest line.
+        let slope = |x0: f64, x1: f64, z0: f64, z1: f64| {
+            let pos = [V3(x0, -20.0, z0), V3(x1, -20.0, z1), V3(x1, 20.0, z1), V3(x0, 20.0, z0)];
+            let n = V3(-(z1 - z0), 0.0, x1 - x0).unit();
+            Poly { projected: vec![pos.iter().map(|v| Point::new(v.0, v.1)).collect()], normals: vec![n; 4], positions: pos.to_vec(), normal: n }
+        };
+        let valley = vec![slope(-20.0, 0.0, 20.0, 0.0), slope(0.0, 20.0, 0.0, 20.0)];
+        let plane = vec![slope(-20.0, 20.0, 0.0, 0.0)];
+        let shine = |polys: Vec<Poly>, occlusion: f64| {
+            let rig = rig(Material { occlusion, smooth: true, ..Material::default() });
+            let image = Shading::new(rig, 240.0, polys).image(&grey).unwrap();
+            let w = image.width as usize;
+            let at = |x: usize| image.rgba[((image.height as usize / 2) * w + x) * 4];
+            (at(w / 2), at(w / 4))
+        };
+        let (crease, side) = shine(valley.clone(), 0.0);
+        let (dark_crease, dark_side) = shine(valley, 1.0);
+        assert!(f64::from(dark_crease) < 0.8 * f64::from(crease), "the crease darkens: {crease} → {dark_crease}");
+        assert!(dark_side <= side && dark_crease < dark_side, "less away from it: {side} → {dark_side}");
+        assert_eq!(shine(plane.clone(), 1.0), shine(plane, 0.0), "a plane hides nothing of itself");
+    }
+
+    #[test]
+    fn layers_share_one_shading() {
+        let s = dome(Material { specular: 1.0, roughness: 0.3, smooth: true, ..Material::default() });
+        let tint = |s: &Shade| s.tint.map(|t| t as f32);
+        let highlight = |s: &Shade| s.highlight.map(|h| h as f32);
+        let layers = s.layers(&[&tint, &highlight]).unwrap();
+        assert_eq!(layers.len(), 2);
+        assert_eq!((layers[0].width, layers[0].origin), (layers[1].width, layers[1].origin));
+        assert_eq!(s.image(&tint).unwrap(), layers[0]);
+        assert!(layers[1].rgba.chunks(4).any(|p| p[0] > 200), "the highlight layer holds the highlight");
+        assert!(s.layers(&[]).is_none());
     }
 }

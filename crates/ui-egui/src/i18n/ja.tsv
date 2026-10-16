@@ -4371,6 +4371,11 @@ lighting	Light	ライト
 	Metallic	メタリック
 	Rim Light	リムライト
 	Cel Bands	セルの階調
+	Reflections	映り込み
+	Outdoor	屋外
+	Sunset	夕焼け
+	Ambient Occlusion	アンビエントオクルージョン
+	Contact Shadow	接地影
 	Smooth shading	スムーズシェーディング
 	Ambient Color	環境光の色
 	Soft Touch	ソフトタッチ

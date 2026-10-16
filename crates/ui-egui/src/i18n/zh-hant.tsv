@@ -3746,6 +3746,11 @@ lighting	Light	光源
 	Metallic	金屬感
 	Rim Light	輪廓光
 	Cel Bands	色階數
+	Reflections	反射
+	Outdoor	戶外
+	Sunset	日落
+	Ambient Occlusion	環境光遮蔽
+	Contact Shadow	接觸陰影
 	Smooth shading	平滑著色
 	Ambient Color	環境光顏色
 	Soft Touch	柔觸

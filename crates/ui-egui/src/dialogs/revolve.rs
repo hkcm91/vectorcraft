@@ -328,6 +328,15 @@ fn material_controls(ui: &mut egui::Ui, d: &mut Dialog) {
         number(ui, d, "roughness", tl!("Roughness"), (0.0, 100.0), "%", 1, None);
     });
     number(ui, d, "metallic", tl!("Metallic"), (0.0, 100.0), "%", 1, None);
+    let backdrops = [
+        (json!("gradient"), tl!("Gradient")),
+        (json!("studio"), tl!("Studio")),
+        (json!("outdoor"), tl!("Outdoor")),
+        (json!("sunset"), tl!("Sunset")),
+        (json!("dark"), tl!("Dark")),
+    ];
+    // What metal and glossy surfaces mirror.
+    ui.add_enabled_ui(value(d, "specular") > 0.0 || value(d, "metallic") > 0.0, |ui| choice(ui, d, "environment", tl!("Reflections"), &backdrops));
     ui.add_space(8.0);
     heading(ui, tl!("Rim Light"));
     number(ui, d, "rimLight", tl!("Intensity"), (0.0, 100.0), "%", 1, None);
@@ -336,6 +345,10 @@ fn material_controls(ui: &mut egui::Ui, d: &mut Dialog) {
     heading(ui, tl!("Shading"));
     number(ui, d, "shadingSteps", tl!("Cel Bands"), (0.0, f64::from(vectorcraft_three_d::MAX_SHADING_STEPS)), "", 0, None);
     toggle(ui, d, "smoothShading", tl!("Smooth shading"), true);
+    // Ambient occlusion needs the per-pixel shading's depth.
+    ui.add_enabled_ui(d.bool("smoothShading"), |ui| {
+        number(ui, d, "ambientOcclusion", tl!("Ambient Occlusion"), (0.0, 100.0), "%", 1, None);
+    });
 }
 
 fn lighting_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
@@ -379,6 +392,7 @@ fn lighting_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
             number(ui, d, "shadowDistance", tl!("Distance"), (0.0, 100000.0), "", 1, Some(unit));
             number(ui, d, "shadowOpacity", tl!("Opacity"), (0.0, 100.0), "%", 1, None);
             number(ui, d, "shadowSoftness", tl!("Softness"), (0.0, 100.0), "%", 1, None);
+            number(ui, d, "contactShadow", tl!("Contact Shadow"), (0.0, 100.0), "%", 1, None);
         });
     });
 }

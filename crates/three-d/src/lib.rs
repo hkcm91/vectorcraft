@@ -11,7 +11,7 @@ mod raster;
 mod smooth;
 mod solid;
 mod visibility;
-pub use lighting::{Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, Material, Shade, ShadowPosition};
+pub use lighting::{Environment, Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, Material, Shade, ShadowPosition};
 pub use raster::{ShadedImage, Shading};
 pub use solid::{Bevel, BevelShape, Extrude, Facet, Inflate, Shaded, View, extrude, extrude_lit, inflate, inflate_lit, plane, plane_lit};
 pub use visibility::{VisibleFace, visible_faces};
@@ -285,6 +285,8 @@ pub struct Revolved {
     pub faces: Vec<Face>,
     pub shadow: Option<PathData>,
     pub shading: Option<Shading>,
+    /// The contact shadow where the surface meets the shadow's plane, and how strongly it shows.
+    pub contact: Option<(PathData, f64)>,
 }
 
 /// [`revolve`], with its shadow and smooth shading.
@@ -419,7 +421,8 @@ pub fn revolve_lit(path: &PathData, bounds: Rect, options: Revolve) -> Result<Re
     }
     faces.sort_by(|a, b| a.depth.total_cmp(&b.depth));
     let shadow = lighting::cast(&casters, light, o.shadow, o.shadow_distance, project);
-    Ok(Revolved { faces, shadow, shading })
+    let contact = lighting::contact(&casters, o.shadow, o.shadow_distance, project);
+    Ok(Revolved { faces, shadow, shading, contact })
 }
 
 #[cfg(test)]

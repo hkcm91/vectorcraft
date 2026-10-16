@@ -293,13 +293,73 @@ fn smooth_shading_is_on_for_new_effects_and_off_for_saved_ones_without_it() {
         let art = solid_art(&n).unwrap();
         assert!(faces(&art).iter().all(|f| matches!(f.kind, NodeKind::Path { .. }) && face_colours(f).len() == 1), "{id}");
     }
-    // A paint that isn't a flat colour keeps its faces.
+}
+
+#[test]
+fn other_paints_are_multiplied_by_the_shading_pixel_by_pixel() {
     let mut n = square_node();
     if let AppearanceItem::Fill(f) = &mut n.appearance.items[0] {
         f.paint = Paint::Pattern { pattern: "dots".into(), xf: Affine::IDENTITY };
     }
-    n.appearance.effects.push(fx(INFLATE, json!({})));
+    n.appearance.effects.push(fx(INFLATE, json!({"specular": 80})));
+    let art = solid_art(&n).unwrap();
+    let group = &art.children().unwrap()[0].children().unwrap()[0];
+    assert!(group.isolate, "the blends act on the paint alone");
+    let NodeKind::Group { children, clip: true } = &group.kind else { panic!("{:?}", group.kind) };
+    // The clip, the paint filling the outline, then the shading's tint multiplied and its
+    // highlight screened over it.
+    assert_eq!(children.len(), 4);
+    let AppearanceItem::Fill(fill) = &children[1].appearance.items[0] else { panic!("a fill") };
+    assert!(matches!(fill.paint, Paint::Pattern { .. }));
+    assert_eq!((children[2].blend, children[3].blend), (BlendMode::Multiply, BlendMode::Screen));
+    for (k, c) in children[2..].iter().enumerate() {
+        let NodeKind::Image(im) = &c.kind else { panic!("an image") };
+        let px = vectorcraft_doc::generated::get(&im.key).unwrap();
+        assert!(px.rgba.chunks(4).any(|p| p[3] == 255 && p[0] > 0), "layer {k} paints");
+    }
+    // Saved flat, it keeps its vector faces.
+    n.appearance.effects[0].params["smoothShading"] = json!(false);
     assert!(faces(&solid_art(&n).unwrap()).iter().all(|f| matches!(f.kind, NodeKind::Path { .. })));
+}
+
+#[test]
+fn options_added_later_keep_saved_effects_as_they_were() {
+    // New effects store occlusion, the contact shadow and a studio to reflect…
+    let new = fx(EXTRUDE, json!({}));
+    assert_eq!(new.params["ambientOcclusion"], json!(60.0));
+    assert_eq!(new.params["contactShadow"], json!(60.0));
+    assert_eq!(new.params["environment"], json!("studio"));
+    let p = crate::lighting::drawing_params(EXTRUDE, &new.params);
+    let l = crate::lighting::lighting(&p);
+    assert_eq!((l.material.occlusion, l.material.environment), (0.6, vectorcraft_three_d::Environment::Studio));
+    // …an effect saved before them draws as it did: none of them.
+    let saved = json!({"smoothShading": true, "specular": 50});
+    let p = crate::lighting::drawing_params(EXTRUDE, &saved);
+    assert_eq!((p["ambientOcclusion"].clone(), p["contactShadow"].clone(), p["environment"].clone()), (json!(0.0), json!(0.0), json!("gradient")));
+    assert!(validate_solid(&square_node(), EXTRUDE, &json!({"environment": "moon"})).unwrap_err().contains("environment must be"));
+    assert!(validate_solid(&square_node(), EXTRUDE, &json!({"environment": "sunset"})).is_ok());
+}
+
+#[test]
+fn a_contact_shadow_sits_tight_under_the_object() {
+    let mut n = square_node();
+    n.appearance.effects.push(fx(INFLATE, json!({"shadow": "below", "shadowOpacity": 40, "contactShadow": 80})));
+    let art = solid_art(&n).unwrap();
+    let parts = art.children().unwrap();
+    // The cast shadow, then the contact shadow, then the surface.
+    let (cast, contact) = (&parts[0], &parts[1]);
+    assert!(cast.path_data().is_some() && contact.path_data().is_some());
+    assert!(contact.opacity > cast.opacity, "darker: {} vs {}", contact.opacity, cast.opacity);
+    let blur = |m: &Node| m.appearance.effects.iter().find(|e| e.id == "blur.gaussian").map(|e| e.params["radius"].as_f64().unwrap()).unwrap();
+    assert!(blur(contact) < blur(cast), "and tighter");
+    let (cb, sb) = (contact.path_data().unwrap().bounds().unwrap(), cast.path_data().unwrap().bounds().unwrap());
+    assert!(cb.height() < sb.height(), "only where the object meets the ground: {cb:?} {sb:?}");
+    // Off, or lifted clear of the ground: only the cast shadow.
+    n.appearance.effects[0].params["contactShadow"] = json!(0);
+    assert_eq!(solid_art(&n).unwrap().children().unwrap().len(), 2);
+    n.appearance.effects[0].params["contactShadow"] = json!(80);
+    n.appearance.effects[0].params["shadowDistance"] = json!(60);
+    assert_eq!(solid_art(&n).unwrap().children().unwrap().len(), 2);
 }
 
 #[test]
