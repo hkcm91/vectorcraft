@@ -15,7 +15,7 @@ use std::sync::Arc;
 use vectorcraft_doc::color::{BlendMode, Color, Paint};
 use vectorcraft_doc::{Appearance, AppearanceItem, Effect, FillLayer, ImageObject, Node, NodeId, NodeKind};
 use vectorcraft_geom::{Affine, PathData};
-use vectorcraft_three_d::{Environment, Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, Material, Shade, Shading, ShadowPosition};
+use vectorcraft_three_d::{DRAFT_SIDE, Environment, Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, MAX_SIDE, Material, Shade, Shading, ShadowPosition};
 
 use crate::util::{flag, num, text};
 
@@ -282,12 +282,20 @@ pub fn shaded(c: Color, tint: [f64; 3], highlight: [f64; 3]) -> Paint {
     Paint::solid(Color::rgb(ch(r, tint[0], highlight[0]), ch(g, tint[1], highlight[1]), ch(b, tint[2], highlight[2])))
 }
 
-/// A smooth-shaded surface in `paint`, drawn pixel by pixel ([`Shading::image`]) and clipped to
+/// How many pixels, at most, along the longer side of the shading image a 3D effect's params ask
+/// for: a draft ([`DRAFT_SIDE`]) while a live preview is being dragged (`draftPreview`, which only
+/// the dialog's preview sets), else the full size.
+pub fn shading_side(p: &Value) -> f64 {
+    if flag(p, "draftPreview", false) { DRAFT_SIDE } else { MAX_SIDE }
+}
+
+/// A smooth-shaded surface in `paint`, drawn pixel by pixel ([`Shading::layers_at`], at most
+/// `longest` pixels along its longer side) and clipped to
 /// the outline its faces cover, as a clip group keeping `id`. A flat colour is shaded straight
 /// into the image (as [`shaded`] colours it); another paint (a gradient, a pattern) fills the
 /// outline, multiplied by an image of the shading's tint and screened by one of its highlight.
 /// The pixels go to [`vectorcraft_doc::generated`]. `None` when the surface has no area.
-pub fn shaded_surface(id: NodeId, shading: &Shading, paint: &Paint) -> Option<Node> {
+pub fn shaded_surface(id: NodeId, shading: &Shading, paint: &Paint, longest: f64) -> Option<Node> {
     let image = |img: vectorcraft_three_d::ShadedImage, blend: BlendMode| -> Option<Arc<Node>> {
         let (width, height) = (img.width, img.height);
         let key = vectorcraft_doc::generated::put(width, height, img.rgba)?;
@@ -308,12 +316,13 @@ pub fn shaded_surface(id: NodeId, shading: &Shading, paint: &Paint) -> Option<No
                 let ch = |c: f32, t: f64, h: f64| (c * t as f32 + h as f32).clamp(0.0, 1.0);
                 [ch(r, s.tint[0], s.highlight[0]), ch(g, s.tint[1], s.highlight[1]), ch(b, s.tint[2], s.highlight[2])]
             };
-            vec![Arc::new(clip), image(shading.image(&colour)?, BlendMode::Normal)?]
+            let img = shading.layers_at(&[&colour], longest)?.into_iter().next()?;
+            vec![Arc::new(clip), image(img, BlendMode::Normal)?]
         }
         None => {
             let tint = |s: &Shade| s.tint.map(|t| t.clamp(0.0, 1.0) as f32);
             let highlight = |s: &Shade| s.highlight.map(|h| h.clamp(0.0, 1.0) as f32);
-            let mut layers = shading.layers(&[&tint, &highlight])?.into_iter();
+            let mut layers = shading.layers_at(&[&tint, &highlight], longest)?.into_iter();
             let fill = Node::path(id, outline, Appearance { items: vec![AppearanceItem::Fill(FillLayer::new(paint.clone()))], ..Default::default() });
             vec![Arc::new(clip), Arc::new(fill), image(layers.next()?, BlendMode::Multiply)?, image(layers.next()?, BlendMode::Screen)?]
         }

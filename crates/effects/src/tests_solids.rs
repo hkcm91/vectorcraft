@@ -465,3 +465,19 @@ fn the_dramatic_preset_keeps_its_shadow_side_readable() {
     let lit = &pixels.rgba[((h / 2) * w + w / 4) * 4..][..4];
     assert!(lit[0] > p[0] + 60, "and stays clearly darker than the lit side: {lit:?} {p:?}");
 }
+
+#[test]
+fn a_draft_preview_shades_coarser_and_the_same_art_is_made_once() {
+    let mut n = square_node();
+    n.appearance.effects.push(fx(INFLATE, json!({"specular": 60})));
+    let full = solid_art(&n).unwrap();
+    // The same object again: the remembered art, the same image.
+    assert_eq!(solid_art(&n).unwrap(), full);
+    let (im, _) = shading_image(&full.children().unwrap()[0]);
+    n.appearance.effects[0].params["draftPreview"] = json!(true);
+    let draft = solid_art(&n).unwrap();
+    let (dm, _) = shading_image(&draft.children().unwrap()[0]);
+    assert!(f64::from(dm.width) <= vectorcraft_three_d::DRAFT_SIDE + 6.0 && im.width > 2 * dm.width, "{} {}", im.width, dm.width);
+    // The validated parameters take the flag.
+    assert!(validate_solid(&n, INFLATE, &n.appearance.effects[0].params).is_ok());
+}

@@ -12,7 +12,7 @@ mod smooth;
 mod solid;
 mod visibility;
 pub use lighting::{Environment, Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, Material, Shade, ShadowPosition};
-pub use raster::{ShadedImage, Shading};
+pub use raster::{DRAFT_SIDE, MAX_SIDE, ShadedImage, Shading};
 pub use solid::{Bevel, BevelShape, Extrude, Facet, Inflate, Shaded, View, extrude, extrude_lit, inflate, inflate_lit, plane, plane_lit};
 pub use visibility::{VisibleFace, visible_faces};
 

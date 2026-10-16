@@ -326,3 +326,35 @@ fn material_tab_presets_set_the_material_and_lighting_presets_the_lights() {
     assert!(studio.matches(&d.fields, &defaults));
     assert_eq!(d.fields["lights"].as_array().map(Vec::len), Some(2));
 }
+
+#[test]
+fn dragging_a_value_previews_a_draft_and_letting_go_shades_it_in_full() {
+    let mut h = Harness::with("M100 100 L200 100 L200 200 L100 200 Z", vectorcraft_effects::INFLATE, vec2(1400.0, 1100.0));
+    h.settle();
+    h.click(h.rect("Rotation").center());
+    let live = |h: &Harness| {
+        let st = h.app.session.doc().unwrap();
+        st.doc.node(st.selection.objects[0]).unwrap().appearance.effects.last().unwrap().params.clone()
+    };
+    assert!(live(&h).get("draftPreview").is_none());
+    // Mid-drag on Rotation Y's label: the value moves and the preview is a draft.
+    let p = h.rect("Rotation Y").center();
+    h.frame(vec![Event::PointerMoved(p), button(p, true)]);
+    for i in 1..=4 {
+        h.frame(vec![Event::PointerMoved(p + vec2(10.0 * i as f32, 0.0))]);
+    }
+    assert_eq!(live(&h)["draftPreview"], json!(true), "while dragging");
+    let moved = live(&h)["rotationY"].clone();
+    // Let go: the same values, shaded in full.
+    h.frame(vec![button(p + vec2(40.0, 0.0), false)]);
+    h.settle();
+    let after = live(&h);
+    assert!(after.get("draftPreview").is_none(), "after letting go: {after}");
+    assert_eq!(after["rotationY"], moved);
+    // OK keeps the full effect.
+    h.click(h.rect("OK").center());
+    assert!(h.app.ui.dialog.is_none());
+    let st = h.app.session.doc().unwrap();
+    let kept = &st.doc.node(st.selection.objects[0]).unwrap().appearance.effects.last().unwrap().params;
+    assert!(kept.get("draftPreview").is_none());
+}

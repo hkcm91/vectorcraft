@@ -219,8 +219,13 @@ fn malformed_and_degenerate_input_is_bounded() {
     let f = extrude(&p, b, wild, View { rotation_x: f64::NAN, perspective: 9.0, ..front() }).unwrap();
     assert!(f.iter().flat_map(|f| f.contours.iter().flatten()).all(|q| q.x.is_finite() && q.y.is_finite()));
     assert!(
-        inflate(&p, b, Inflate { depth: -5.0, volume: f64::NAN, both_sides: true, twist: f64::INFINITY, taper: f64::NAN, cap: true }, front())
-            .is_ok()
+        inflate(
+            &p,
+            b,
+            Inflate { depth: -5.0, volume: f64::NAN, both_sides: true, twist: f64::INFINITY, taper: f64::NAN, cap: true, draft: false },
+            front()
+        )
+        .is_ok()
     );
     assert!(extrude(&PathData::default(), b, Extrude::default(), front()).unwrap().is_empty());
     // A line has no area to extrude.

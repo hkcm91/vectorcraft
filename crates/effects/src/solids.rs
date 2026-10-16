@@ -98,6 +98,7 @@ pub fn inflate_options(p: &Value) -> Inflate {
         twist: num(p, "twist", 0.0),
         taper: num(p, "taper", 100.0) / 100.0,
         cap: flag(p, "cap", true),
+        draft: flag(p, "draftPreview", false),
     }
 }
 
@@ -140,9 +141,9 @@ pub fn validate_solid(n: &Node, id: &str, p: &Value) -> Result<(), String> {
 /// One surface as a group with the paint's opacity and blend mode (so overlapping facets don't
 /// add up their transparency): with smooth shading the surface pixel by pixel, otherwise each
 /// facet a path shaded from `paint`.
-fn surface(n: &Node, shaded: Shaded, paint: &Paint, opacity: f32, blend: BlendMode) -> Node {
+fn surface(n: &Node, shaded: Shaded, paint: &Paint, opacity: f32, blend: BlendMode, longest: f64) -> Node {
     if let Some(shading) = &shaded.shading
-        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, paint)
+        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, paint, longest)
     {
         let mut group = Node::group(n.id, vec![Arc::new(art)]);
         group.opacity = opacity;
@@ -218,7 +219,7 @@ fn art_for(n: &Node, fx: &Effect, path: &PathData, rule: FillRule, items: &[&App
                 contact.extend(c.subpaths);
                 strength = strength.max(k);
             }
-            out.push(Arc::new(surface(n, s, &paint, opacity, blend)));
+            out.push(Arc::new(surface(n, s, &paint, opacity, blend, crate::lighting::shading_side(&p))));
         }
         let shadow = (!shadow.is_empty()).then(|| PathData::new(shadow));
         let contact = (!contact.is_empty()).then(|| (PathData::new(contact), strength));
@@ -232,7 +233,7 @@ fn art_for(n: &Node, fx: &Effect, path: &PathData, rule: FillRule, items: &[&App
     // failing the frame; commands validate the same evaluator and report its errors.
     let mut s = facets(&fx.id, path, b, &p).ok()?;
     let mut all = crate::lighting::shadow_nodes(n, s.shadow.take(), s.contact.take(), &p, size);
-    all.push(Arc::new(surface(n, s, &paint, opacity, blend)));
+    all.push(Arc::new(surface(n, s, &paint, opacity, blend, crate::lighting::shading_side(&p))));
     Some(all)
 }
 
@@ -246,6 +247,10 @@ pub fn solid_art(n: &Node) -> Option<Node> {
     if !has_solid(n) {
         return None;
     }
+    crate::memo::remember(2, n, || evaluate(n))
+}
+
+fn evaluate(n: &Node) -> Option<Node> {
     let (path, rule) = profile(n)?;
     let ctx = GeomContext::of(n);
     let painted: Vec<&AppearanceItem> = n.appearance.items.iter().filter(|i| crate::paints(i)).collect();

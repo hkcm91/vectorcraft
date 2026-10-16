@@ -132,6 +132,13 @@ The **Material** tab sets how the surface takes the light, for the clean 3D icon
   reflections dim by what is hidden, the lights by half as much. It sees only the visible surface (screen-space
   ambient occlusion): what a nearer part hides behind it doesn't count.
 
+While a value is being dragged in the dialog (a slider, a rotation ring, the light), the live preview shades a
+draft: an image a third as fine each way (256 pixels along its longer side), Inflate on a grid half as fine and
+Revolve in half the segments, so the preview follows the pointer (about 38 ms against 240 ms for a glossy
+inflated heart on four cores). Letting go shades it in full again; OK never keeps the draft. The silhouette stays
+the crisp vector outline throughout. The last few 3D arts are remembered by their object's content, so drawing
+an object and finding its bounds shade it once.
+
 **Presets**: **Matte** (the defaults), **Soft Touch**, **Plastic**, **Glossy**, **Metal**, **Chrome**, **Rim Glow**
 and **Toon**, shown by name while the material matches. All values are our own.
 
@@ -148,7 +155,8 @@ material: `specular`, `roughness`, `metallic`, `rimLight` (%), `rimColor`, `shad
 and `smoothShading` (absent: off), `ambientOcclusion` (%, absent: 0), `environment` (`gradient`, `studio`,
 `outdoor`, `sunset`, `dark`; absent: `gradient`) and `contactShadow` (%, absent: 0). New effects store each
 option on (smooth shading, 60 % occlusion, a 60 % contact shadow and the studio); an effect saved before an
-option existed draws without it, as it did then. Lengths are points and scale with the object (Scale Strokes &
+option existed draws without it, as it did then. `draftPreview` (true) asks for the quick draft the dialog
+shows while a value is dragged. Lengths are points and scale with the object (Scale Strokes &
 Effects).
 Commands validate the shape and the parameters before the document changes.
 

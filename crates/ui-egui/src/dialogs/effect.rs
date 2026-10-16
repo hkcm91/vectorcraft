@@ -135,7 +135,12 @@ fn body(app: &mut VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) -> bool {
     let (id, relative) = (d.str("__effect"), d.bool("relative"));
     if vectorcraft_effects::is_three_d(&id) {
         super::revolve::body(app, ui, d);
-        let (cmd, params) = command(d);
+        let (cmd, mut params) = command(d);
+        if draft(ui.ctx().dragged_id().is_some(), d.fields.get(form::PREVIEWED), &params)
+            && let Some(p) = params.get_mut("params").and_then(Value::as_object_mut)
+        {
+            p.insert(DRAFT.into(), json!(true));
+        }
         form::preview(app, ui, d, &d.str("__label"), cmd, params);
         return false;
     }
@@ -466,6 +471,29 @@ fn curve_graph(ui: &mut egui::Ui, d: &mut Dialog) {
     }
 }
 
+/// The 3D effects' draft flag ([`vectorcraft_effects::shading_side`]).
+const DRAFT: &str = "draftPreview";
+
+/// Should a 3D effect's live preview (`params`, the preview command's) shade a draft? While a
+/// drag (`dragging`: a slider, a rotation ring, the light) changes its values, or goes on after
+/// it did: a ninth of the pixels to shade keeps the preview following the pointer. Letting go
+/// drops the flag, so the preview shades again in full, and OK never carries it. Dragging
+/// something that changes nothing (the dialog itself) keeps the full preview.
+fn draft(dragging: bool, previewed: Option<&Value>, params: &Value) -> bool {
+    if !dragging {
+        return false;
+    }
+    let Some(last) = previewed else { return false };
+    let without = |v: &Value| {
+        let mut v = v.clone();
+        if let Some(p) = v.get_mut("params").and_then(Value::as_object_mut) {
+            p.remove(DRAFT);
+        }
+        v
+    };
+    last["params"][DRAFT] == json!(true) || without(last) != *params
+}
+
 /// What OK runs: `effect.setParams` on the edited effect (`__index`), else `effect.apply` of the
 /// dialog's effect with its values on the target item.
 fn command(d: &Dialog) -> (&'static str, Value) {
@@ -501,6 +529,24 @@ fn confirm(app: &mut VectorcraftApp, d: &Dialog) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_3d_preview_is_a_draft_only_while_a_drag_changes_it() {
+        let at = |rotation: f64, draft: bool| {
+            let mut p = json!({"effect": "threeD.inflate", "params": {"rotationY": rotation}});
+            if draft {
+                p["params"][DRAFT] = json!(true);
+            }
+            p
+        };
+        // A drag that changes a value: a draft, and it stays one while the drag goes on.
+        assert!(draft(true, Some(&at(10.0, false)), &at(12.0, false)));
+        assert!(draft(true, Some(&at(12.0, true)), &at(12.0, false)));
+        // Let go: full again. Dragging what changes nothing (the dialog): full. Nothing yet: full.
+        assert!(!draft(false, Some(&at(12.0, true)), &at(12.0, false)));
+        assert!(!draft(true, Some(&at(12.0, false)), &at(12.0, false)));
+        assert!(!draft(true, None, &at(12.0, false)));
+    }
 
     #[test]
     fn fields_that_pick_a_value_are_dropdowns_of_its_values() {

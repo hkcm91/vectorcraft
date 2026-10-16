@@ -30,7 +30,8 @@ pub fn revolve_options(p: &Value) -> Revolve {
         rotation_y: num(p, "rotationY", 0.0),
         rotation_z: num(p, "rotationZ", 0.0),
         perspective: num(p, "perspective", 0.0) / 100.0,
-        segments: num(p, "segments", 64.0).clamp(8.0, 128.0) as usize,
+        // A draft (a live preview being dragged) goes round in half the steps.
+        segments: (num(p, "segments", 64.0).clamp(8.0, 128.0) / if flag(p, "draftPreview", false) { 2.0 } else { 1.0 }) as usize,
         light_azimuth: num(p, "lightAzimuth", -45.0),
         light_elevation: num(p, "lightElevation", 45.0),
         light_intensity: num(p, "lightIntensity", 80.0) / 100.0,
@@ -88,7 +89,7 @@ fn surface(
     let shadow = crate::lighting::shadow_nodes(n, shadow, contact, &params, b.width().max(b.height()));
     // Smooth shading: the surface pixel by pixel.
     if let Some(shading) = &shading
-        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, &paint)
+        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, &paint, crate::lighting::shading_side(&params))
     {
         let mut group = Node::group(n.id, shadow.into_iter().chain([Arc::new(art)]).collect());
         group.opacity = opacity;
@@ -156,7 +157,10 @@ fn paint_of(item: &AppearanceItem) -> (Paint, f32, vectorcraft_doc::color::Blend
 /// Evaluated art keeps the source's identity and transparency. Each item's opacity belongs
 /// to its entire surface, not to each face, so overlapping faces don't accumulate alpha.
 pub fn revolve_art(n: &Node) -> Option<Node> {
-    art(n, false)
+    if !has_revolve(n) {
+        return None;
+    }
+    crate::memo::remember(1, n, || art(n, false))
 }
 
 /// Revolve's own Expand Appearance path. The shared command and UI remain unchanged.

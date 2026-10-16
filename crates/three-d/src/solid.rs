@@ -219,11 +219,13 @@ pub struct Inflate {
     pub taper: f64,
     /// A closed back (a solid) or none, so the inflated front is a shell open behind.
     pub cap: bool,
+    /// A quick draft (a live preview being dragged): the surface on a grid half as fine.
+    pub draft: bool,
 }
 
 impl Default for Inflate {
     fn default() -> Self {
-        Self { depth: 0.0, volume: 50.0, both_sides: false, twist: 0.0, taper: 1.0, cap: true }
+        Self { depth: 0.0, volume: 50.0, both_sides: false, twist: 0.0, taper: 1.0, cap: true, draft: false }
     }
 }
 
@@ -1171,8 +1173,8 @@ pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) 
     if size <= 0.0 {
         return Ok(Shaded::default());
     }
-    const CELLS: usize = 48;
-    let cell = size / CELLS as f64;
+    let cells = if o.draft { 24 } else { 48 };
+    let cell = size / cells as f64;
     let (nx, ny) = (((bounds.width() / cell).ceil() as usize).max(1), ((bounds.height() / cell).ceil() as usize).max(1));
     let m = Membrane::solve(&rings, bounds.origin(), cell, nx + 1, ny + 1);
     let edges = Edges::new(&rings);
@@ -1192,7 +1194,9 @@ pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) 
     let gain = if m.peak > 0.0 { height / m.peak.sqrt() } else { 0.0 };
     // Distances for the normals come from the curves flattened 64 times finer: the distance to a
     // polyline turns its direction a step at each corner, and a tight highlight shows each step.
-    let fine_rings = rings_within(path, (size / 2000.0).max(0.05) / 64.0, MAX_PLANE_POINTS).ok().filter(|r| !r.is_empty());
+    // (A draft makes do with the outline as it is.)
+    let fine_rings =
+        (!o.draft).then(|| rings_within(path, (size / 2000.0).max(0.05) / 64.0, MAX_PLANE_POINTS).ok()).flatten().filter(|r| !r.is_empty());
     let fine = fine_rings.as_ref().map(|r| Edges::new(r));
     let (smooth_rings, smooth_edges) = (fine_rings.as_ref().unwrap_or(&rings), fine.as_ref().unwrap_or(&edges));
     // The mesh's points lie in the shape as flattened coarsely, which is within that flattening's

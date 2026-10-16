@@ -11,7 +11,10 @@ use crate::V3;
 use crate::lighting::{Rig, Shade};
 
 /// The longest side of a shading image, in pixels.
-const MAX_SIDE: f64 = 768.0;
+pub const MAX_SIDE: f64 = 768.0;
+/// The longest side of a draft shading image (a live preview while something is dragged): a
+/// ninth of the pixels to shade, the silhouette still the crisp vector outline.
+pub const DRAFT_SIDE: f64 = 256.0;
 /// The most pixels a shading image takes per point.
 const MAX_DENSITY: f64 = 8.0;
 /// Samples per pixel each way.
@@ -168,7 +171,7 @@ impl Shading {
     /// neighbouring faces don't quite meet (a steep, finely cut rim) and stays within the
     /// colour the image paints past the surface.
     pub fn outline(&self) -> PathData {
-        let grow = 0.75 * self.bounds().map_or(0.0, Self::step);
+        let grow = 0.75 * self.bounds().map_or(0.0, |r| Self::step(r, MAX_SIDE));
         let mut bp = BezPath::new();
         let mut ring = |pts: &[Point], grow: f64| {
             let Some(first) = pts.first() else { return };
@@ -209,10 +212,11 @@ impl Shading {
         PathData::from_bezpath(&bp)
     }
 
-    /// The size of a shading image's pixels, in points, for a surface covering `r`.
-    fn step(r: Rect) -> f64 {
+    /// The size of a shading image's pixels, in points, for a surface covering `r` in an image
+    /// at most `longest` pixels along its longer side.
+    fn step(r: Rect, longest: f64) -> f64 {
         let side = r.width().max(r.height());
-        1.0 / (MAX_SIDE / side.max(1e-9)).min(MAX_DENSITY)
+        1.0 / (longest / side.max(1e-9)).min(MAX_DENSITY)
     }
 
     /// The document area the faces cover.
@@ -233,6 +237,13 @@ impl Shading {
     /// shading is worked out once), in their order. `None` for a surface with no area or no
     /// colouring.
     pub fn layers(&self, colours: &[Colouring]) -> Option<Vec<ShadedImage>> {
+        self.layers_at(colours, MAX_SIDE)
+    }
+
+    /// [`Self::layers`] in an image at most `longest` pixels along its longer side (16 up to
+    /// [`MAX_SIDE`]): [`DRAFT_SIDE`] for a quick preview.
+    pub fn layers_at(&self, colours: &[Colouring], longest: f64) -> Option<Vec<ShadedImage>> {
+        let longest = if longest.is_finite() { longest.clamp(16.0, MAX_SIDE) } else { MAX_SIDE };
         let colours = colours.get(..colours.len().min(MAX_LAYERS))?;
         if colours.is_empty() {
             return None;
@@ -242,7 +253,7 @@ impl Shading {
         if side <= 1e-9 {
             return None;
         }
-        let step = Self::step(r);
+        let step = Self::step(r, longest);
         let density = 1.0 / step;
         let pad = PAD as f64 * step;
         let origin = Point::new(r.x0 - pad, r.y0 - pad);
@@ -797,5 +808,18 @@ mod tests {
         assert_eq!(s.image(&tint).unwrap(), layers[0]);
         assert!(layers[1].rgba.chunks(4).any(|p| p[0] > 200), "the highlight layer holds the highlight");
         assert!(s.layers(&[]).is_none());
+    }
+
+    #[test]
+    fn a_draft_shades_a_smaller_image_of_the_same_place() {
+        let s = dome(Material { specular: 1.0, roughness: 0.3, smooth: true, ..Material::default() });
+        let full = s.image(&grey).unwrap();
+        let draft = s.layers_at(&[&grey], DRAFT_SIDE).unwrap().remove(0);
+        assert!(draft.width as f64 <= DRAFT_SIDE + 2.0 * PAD as f64 && full.width > 2 * draft.width, "{} {}", full.width, draft.width);
+        // The same area, coarser pixels.
+        let span = |i: &ShadedImage| f64::from(i.width) * i.step;
+        assert!((span(&full) - span(&draft)).abs() < 4.0 * draft.step);
+        // Nonsense sizes fall back to the full one.
+        assert_eq!(s.layers_at(&[&grey], f64::NAN).unwrap().remove(0), full);
     }
 }
