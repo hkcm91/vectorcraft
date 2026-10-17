@@ -7,6 +7,7 @@
 //! Shortcuts, Workspaces, Find Font) draw their own window.
 
 mod about;
+pub mod arch_options;
 pub mod artboard_options;
 pub mod blend_options;
 mod brush_art_options;
@@ -17,6 +18,7 @@ mod color_picker;
 mod command;
 pub mod confirm;
 pub mod corners;
+pub mod dimension_options;
 mod document_setup;
 pub mod dxf_import;
 pub mod dxf_options;
@@ -293,6 +295,8 @@ registry! {
     LiquifyOptions: [liquify::KIND] => liquify::SPEC,
     FreehandOptions: [freehand::KIND] => freehand::SPEC,
     FlareOptions: [flare_options::KIND] => flare_options::SPEC,
+    ArchOptions: [arch_options::KIND] => arch_options::SPEC,
+    DimensionOptions: [dimension_options::KIND] => dimension_options::SPEC,
     SymbolOptions: [symbol_options::KIND] => symbol_options::SPEC,
     SymbolismOptions: [symbolism_options::KIND] => symbolism_options::SPEC,
     PerspectiveGridPresets: [perspective_presets::KIND] => perspective_presets::SPEC,

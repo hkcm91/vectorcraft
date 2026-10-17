@@ -4714,3 +4714,79 @@ imageTrace	Outline	Körvonal
 @msg	unknown parameter `{key}`; the command takes: {keys}	ismeretlen paraméter: `{key}`; a parancs ezeket fogadja el: {keys}
 	Load EPS into Clipboard	EPS betöltése a vágólapra
 @msg	an image of {w} × {h} pixels is too large to draw	egy {w} × {h} pixeles kép túl nagy a kirajzoláshoz
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Boltív
+	Arch Tool	Boltív eszköz
+	Arch Tool Options	Boltív eszköz beállításai
+	Arch Count:	Ívek száma:
+	Thickness:	Vastagság:
+	Segments:	Szakaszok:
+	Close into Rings	Gyűrűvé zárás
+	Color Palette	Színpaletta
+	Add Color	Szín hozzáadása
+	Remove Color	Szín eltávolítása
+	Shuffle Colors	Színek keverése
+	Fill Style	Kitöltési stílus
+	Wide	Széles
+	Pointed	Csúcsíves
+	Wavy	Hullámos
+	Segmented	Szakaszos
+	Flat	Egyszínű
+	Glossy	Fényes
+	Jelly	Zselé
+	Pearlescent	Gyöngyházfényű
+	Classic Rainbow	Klasszikus szivárvány
+	Candy Arch	Cukorka boltív
+	Double Arch	Dupla boltív
+	Scallop Gate	Csipkés kapu
+	Dream Tunnel	Álomalagút
+	Wavy Arch	Hullámos boltív
+# Dimension tool and its options.
+	Dimension	Méretezés
+	Dimension Tool	Méretezés eszköz
+	Dimension Tool Options	Méretezés eszköz beállításai
+	Angular	Szög
+	Aligned	Igazított
+	Precision:	Pontosság:
+	Ends:	Végek:
+	Tick	Vonás
+	Dot	Pont
+	Line Weight:	Vonalvastagság:
+	Font Size:	Betűméret:
+	Show Units	Mértékegység megjelenítése
+# 3D lighting and shadows.
+	Light Source	Fényforrás
+	Softness	Lágyság
+	Shadows	Árnyékok
+	Below Object	Az objektum alatt
+	Behind Object	Az objektum mögött
+	Distance	Távolság
+	Delete Light	Fény törlése
+	Add Light	Fény hozzáadása
+	More Lights	További fények
+# 3D materials and lighting presets.
+	Material	Anyag
+	Highlight	Csillanás
+	Roughness	Érdesség
+	Metallic	Fémesség
+	Rim Light	Peremfény
+	Cel Bands	Cel-sávok
+	Reflections	Tükröződések
+	Outdoor	Kültér
+	Sunset	Naplemente
+	Ambient Occlusion	Környezeti takarás
+	Contact Shadow	Érintkezési árnyék
+	Smooth shading	Sima árnyékolás
+	Ambient Color	Környezeti fény színe
+	Soft Touch	Puha tapintású
+	Plastic	Műanyag
+	Metal	Fém
+	Chrome	Króm
+	Rim Glow	Peremragyogás
+	Toon	Rajzfilm
+	Standard	Normál
+	Studio	Stúdió
+	Top Light	Felső fény
+	Dramatic	Drámai
+	Warm & Cool	Meleg és hideg
+3d	Matte	Matt

@@ -2,13 +2,13 @@
 use std::sync::Arc;
 
 use serde_json::Value;
-use vectorcraft_doc::color::{Color, Paint};
+use vectorcraft_doc::color::Paint;
 use vectorcraft_doc::{Appearance, AppearanceItem, Effect, FillLayer, Node, NodeKind, StrokeLayer};
 use vectorcraft_geom::{PathData, Rect};
 use vectorcraft_three_d::{Edge, Revolve};
 
 use crate::util::{flag, num, text};
-use crate::{GeomContext, apply_geometry_with, is_geometry, merged_params};
+use crate::{GeomContext, apply_geometry_with, is_geometry};
 
 pub const REVOLVE: &str = "threeD.revolve";
 
@@ -30,12 +30,14 @@ pub fn revolve_options(p: &Value) -> Revolve {
         rotation_y: num(p, "rotationY", 0.0),
         rotation_z: num(p, "rotationZ", 0.0),
         perspective: num(p, "perspective", 0.0) / 100.0,
-        segments: num(p, "segments", 64.0).clamp(8.0, 128.0) as usize,
+        // A draft (a live preview being dragged) goes round in half the steps.
+        segments: (num(p, "segments", 64.0).clamp(8.0, 128.0) / if flag(p, "draftPreview", false) { 2.0 } else { 1.0 }) as usize,
         light_azimuth: num(p, "lightAzimuth", -45.0),
         light_elevation: num(p, "lightElevation", 45.0),
         light_intensity: num(p, "lightIntensity", 80.0) / 100.0,
         ambient: num(p, "ambient", 25.0) / 100.0,
         shade: flag(p, "shade", true),
+        ..crate::lighting::lighting(p).into_revolve()
     }
 }
 
@@ -50,6 +52,7 @@ pub fn validate_revolve(n: &Node, p: &Value) -> Result<(), String> {
     if p.get("edge").is_some_and(|v| v.as_str() != Some("left") && v.as_str() != Some("right")) {
         return Err("Revolve edge must be left or right".into());
     }
+    crate::lighting::validate(p)?;
     vectorcraft_three_d::revolve(&path, b, revolve_options(p)).map(|_| ())
 }
 
@@ -80,7 +83,19 @@ fn surface(
     let b = path.bounds()?;
     // A loaded file or a profile edited past the limits keeps drawing its source path instead
     // of crashing the frame. Commands validate the same evaluator and report its errors.
-    let faces = vectorcraft_three_d::revolve(path, b, revolve_options(&merged_params(REVOLVE, &fx.params))).ok()?;
+    let params = crate::lighting::drawing_params(REVOLVE, &fx.params);
+    let vectorcraft_three_d::Revolved { faces, shadow, shading, contact } =
+        vectorcraft_three_d::revolve_lit(path, b, revolve_options(&params)).ok()?;
+    let shadow = crate::lighting::shadow_nodes(n, shadow, contact, &params, b.width().max(b.height()));
+    // Smooth shading: the surface pixel by pixel.
+    if let Some(shading) = &shading
+        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, &paint, crate::lighting::shading_side(&params))
+    {
+        let mut group = Node::group(n.id, shadow.into_iter().chain([Arc::new(art)]).collect());
+        group.opacity = opacity;
+        group.blend = blend;
+        return Some(group);
+    }
     // Visibility is an expansion option, never a change to live geometry or export baking.
     // Keep all faces for paints whose coverage we cannot prove opaque. A bounded visibility
     // failure also retains the complete surface rather than losing any of the user's art.
@@ -93,24 +108,24 @@ fn surface(
     .then(|| vectorcraft_three_d::visible_faces(&faces).ok())
     .flatten();
     let faces = visible.unwrap_or_else(|| {
-        faces.into_iter().map(|f| vectorcraft_three_d::VisibleFace { path: f.path(), brightness: f.brightness, depth: f.depth }).collect()
+        faces
+            .into_iter()
+            .map(|f| vectorcraft_three_d::VisibleFace {
+                path: f.path(),
+                brightness: f.brightness,
+                depth: f.depth,
+                tint: f.tint,
+                highlight: f.highlight,
+            })
+            .collect()
     });
-    let children = faces
+    let children = shadow
         .into_iter()
-        .map(|face| {
-            let mut fill = FillLayer::new(paint.clone());
-            let mut items = vec![];
-            if let Some(c) = paint.color() {
-                let [r, g, b] = c.to_rgb();
-                let s = face.brightness as f32;
-                fill.paint = Paint::solid(Color::rgb(r * s, g * s, b * s));
-                items.push(AppearanceItem::Fill(fill));
-            } else {
-                items.push(AppearanceItem::Fill(fill));
-                let mut shadow = FillLayer::new(Paint::solid(Color::BLACK));
-                shadow.opacity = (1.0 - face.brightness) as f32;
-                items.push(AppearanceItem::Fill(shadow));
-            }
+        .chain(faces.into_iter().map(|face| {
+            let items = match paint.color() {
+                Some(c) => vec![AppearanceItem::Fill(FillLayer::new(crate::lighting::shaded(c, face.tint, face.highlight)))],
+                None => crate::lighting::shading_layers(&paint, face.brightness, face.highlight),
+            };
             // Independently antialiased adjacent polygons otherwise leave a hairline grid.
             // Matching narrow edge paint overlaps their coverage in the canvas and exporters.
             // Keep opacity on the surface group so these edges never accumulate transparency.
@@ -124,7 +139,7 @@ fn surface(
                 })
                 .collect();
             Arc::new(Node::path(n.id, face.path, Appearance { items, ..Default::default() }))
-        })
+        }))
         .collect();
     let mut group = Node::group(n.id, children);
     group.opacity = opacity;
@@ -142,7 +157,10 @@ fn paint_of(item: &AppearanceItem) -> (Paint, f32, vectorcraft_doc::color::Blend
 /// Evaluated art keeps the source's identity and transparency. Each item's opacity belongs
 /// to its entire surface, not to each face, so overlapping faces don't accumulate alpha.
 pub fn revolve_art(n: &Node) -> Option<Node> {
-    art(n, false)
+    if !has_revolve(n) {
+        return None;
+    }
+    crate::memo::remember(1, n, || art(n, false))
 }
 
 /// Revolve's own Expand Appearance path. The shared command and UI remain unchanged.
@@ -208,6 +226,7 @@ fn art(n: &Node, expand: bool) -> Option<Node> {
 mod tests {
     use super::*;
     use serde_json::json;
+    use vectorcraft_doc::color::Color;
     use vectorcraft_doc::{Document, NodeId};
     use vectorcraft_geom::{Affine, BezPath};
     fn profile_node() -> Node {
@@ -218,8 +237,9 @@ mod tests {
         b.line_to((100.0, 160.0));
         Node::path(NodeId(1), PathData::from_bezpath(&b), Appearance::basic(Paint::solid(Color::rgb(0.8, 0.2, 0.1)), Paint::None, 0.0))
     }
+    /// Revolve, shaded flat: its faces as vector paths.
     fn fx() -> Effect {
-        crate::new_effect(REVOLVE, &json!({})).unwrap()
+        crate::new_effect(REVOLVE, &json!({"smoothShading": false})).unwrap()
     }
     #[test]
     fn source_stays_editable_surface_moves_and_hidden_effect_restores_it() {
@@ -290,6 +310,20 @@ mod tests {
         let effect = n.appearance.effects.remove(0);
         n.appearance.items[0].effects_mut().push(effect);
         assert_eq!(expand_revolve_art(&n).unwrap().children().unwrap()[0], expanded.children().unwrap()[0]);
+    }
+
+    #[test]
+    fn smooth_shading_draws_the_surface_pixel_by_pixel() {
+        let mut n = profile_node();
+        n.appearance.effects.push(crate::new_effect(REVOLVE, &json!({})).unwrap());
+        let art = revolve_art(&n).unwrap();
+        let surface = &art.children().unwrap()[0];
+        let clip = &surface.children().unwrap()[0];
+        let NodeKind::Group { children, clip: true } = &clip.kind else { panic!("{:?}", clip.kind) };
+        let NodeKind::Image(im) = &children[1].kind else { panic!("an image") };
+        let pixels = vectorcraft_doc::generated::get(&im.key).unwrap();
+        assert!(pixels.rgba.chunks(4).any(|p| p[3] == 255));
+        assert_eq!(revolve_art(&n), Some(art), "the same pixels again");
     }
 
     #[test]

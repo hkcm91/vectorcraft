@@ -585,7 +585,8 @@ mod tests {
             assert!(s.execute("effect.setParams", &json!({"index": 0, "params": {"bevel": "nope"}, "ids": [id.0], "item": null})).is_err());
             let svg = s.execute("document.serialize", &json!({"format": "svg"})).unwrap();
             let svg = svg["data"].as_str().or_else(|| svg["text"].as_str()).map(str::to_string).unwrap_or_else(|| svg.to_string());
-            assert!(svg.matches("<path").count() >= 2, "{effect}: exported as vector faces");
+            // Smooth shading (on for new effects) exports an image clipped to the surface's outline.
+            assert!(svg.contains("<clipPath") && svg.contains("<image") && svg.contains("data:image/png"), "{effect}: exported as its shading image");
             s.execute("effect.expandAppearance", &json!({"ids": [id.0]})).unwrap();
             assert!(matches!(node(&s, id).kind, NodeKind::Group { .. }), "{effect}");
             assert!(!effects::has_solid(&node(&s, id)));
@@ -612,7 +613,8 @@ mod tests {
         s.execute("file.new", &json!({"width":300,"height":300})).unwrap();
         let r = s.execute("path.create", &json!({"d":"M 150 40 L 180 60 L 180 140 L 150 160"})).unwrap();
         let id = NodeId(r["id"].as_u64().unwrap());
-        s.execute("effect.apply", &json!({"effect":"threeD.revolve","ids":[id.0],"item":null})).unwrap();
+        // Shaded flat, as vector faces: what visible-only expansion trims.
+        s.execute("effect.apply", &json!({"effect":"threeD.revolve","ids":[id.0],"item":null,"params":{"smoothShading":false}})).unwrap();
         let live = node(&s, id);
         let restored = vectorcraft_format::load(&vectorcraft_format::save(&s.doc().unwrap().doc, false)).unwrap();
         assert_eq!(restored.node(id).unwrap().appearance.effects[0].params["expandVisibleOnly"], json!(true));

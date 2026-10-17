@@ -4589,3 +4589,80 @@ mark-style	Japanese	Japońskie
 @msg	unknown parameter `{key}`; the command takes: {keys}	nieznany parametr `{key}`; polecenie przyjmuje: {keys}
 	Load EPS into Clipboard	Wczytaj EPS do schowka
 @msg	an image of {w} × {h} pixels is too large to draw	obraz o wymiarach {w} × {h} pikseli jest zbyt duży, aby go narysować
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Arkada
+	Arch Tool	Narzędzie Arkada
+	Arch Tool Options	Opcje narzędzia Arkada
+	Arch Count:	Liczba łuków:
+	Thickness:	Grubość:
+	Segments:	Segmenty:
+	Close into Rings	Zamknij w pierścienie
+	Color Palette	Paleta kolorów
+	Add Color	Dodaj kolor
+	Remove Color	Usuń kolor
+	Shuffle Colors	Przemieszaj kolory
+	Fill Style	Styl wypełnienia
+	Wide	Szeroki
+	Pointed	Ostrołuk
+	Wavy	Falisty
+	Segmented	Segmentowy
+	Flat	Płaski
+	Glossy	Błyszczący
+	Jelly	Galaretka
+	Muted	Stonowany
+	Pearlescent	Perłowy
+	Classic Rainbow	Klasyczna tęcza
+	Candy Arch	Cukierkowa arkada
+	Double Arch	Podwójna arkada
+	Scallop Gate	Ząbkowana brama
+	Dream Tunnel	Senny tunel
+	Wavy Arch	Falista arkada
+# Dimension tool and its options.
+	Dimension	Wymiar
+	Dimension Tool	Narzędzie Wymiar
+	Dimension Tool Options	Opcje narzędzia Wymiar
+	Angular	Kątowy
+	Aligned	Wyrównany
+	Precision:	Dokładność:
+	Ends:	Zakończenia:
+	Tick	Kreska
+	Dot	Kropka
+	Line Weight:	Grubość linii:
+	Font Size:	Rozmiar czcionki:
+	Show Units	Pokaż jednostki
+# 3D lighting and shadows.
+	Light Source	Źródło światła
+	Softness	Miękkość
+	Shadows	Cienie
+	Below Object	Pod obiektem
+	Behind Object	Za obiektem
+	Distance	Odległość
+	Delete Light	Usuń światło
+	Add Light	Dodaj światło
+	More Lights	Więcej świateł
+# 3D materials and lighting presets.
+	Material	Materiał
+	Highlight	Odblask
+	Roughness	Chropowatość
+	Metallic	Metaliczność
+	Rim Light	Światło konturowe
+	Cel Bands	Pasma cel
+	Reflections	Odbicia
+	Outdoor	Plener
+	Sunset	Zachód słońca
+	Ambient Occlusion	Okluzja otoczenia
+	Contact Shadow	Cień kontaktowy
+	Smooth shading	Gładkie cieniowanie
+	Ambient Color	Kolor światła otoczenia
+	Soft Touch	Soft touch
+	Plastic	Plastik
+	Metal	Metal
+	Chrome	Chrom
+	Rim Glow	Poświata konturowa
+	Toon	Kreskówkowy
+	Standard	Standardowe
+	Studio	Studio
+	Top Light	Światło z góry
+	Dramatic	Dramatyczne
+	Warm & Cool	Ciepłe i zimne
+3d	Matte	Matowy

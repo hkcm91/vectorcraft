@@ -3751,3 +3751,86 @@ axis	Both	Ambos
 @msg	unknown parameter `{key}`; the command takes no parameters	parâmetro desconhecido `{key}`; o comando não tem parâmetros
 @msg	unknown parameter `{key}`; the command takes: {keys}	parâmetro desconhecido `{key}`; o comando aceita: {keys}
 	Load EPS into Clipboard	Carregar EPS na Área de Transferência
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Arcada
+	Arch Tool	Ferramenta Arcada
+	Arch Tool Options	Opções da ferramenta Arcada
+	Arch Count:	Número de arcos:
+	Thickness:	Espessura:
+	Segments:	Segmentos:
+	Close into Rings	Fechar em anéis
+	Color Palette	Paleta de cores
+	Add Color	Adicionar cor
+	Remove Color	Remover cor
+	Shuffle Colors	Embaralhar cores
+	Fill Style	Estilo de preenchimento
+	Wide	Largo
+	Pointed	Pontiagudo
+	Scallop	Recortado
+	Wavy	Ondulado
+	Segmented	Segmentado
+	Flat	Liso
+	Glossy	Brilhante
+	Jelly	Gelatina
+	Muted	Suave
+	Pearlescent	Perolado
+	Classic Rainbow	Arco-íris clássico
+	Candy Arch	Arcada de bala
+	Double Arch	Arcada dupla
+	Scallop Gate	Portal recortado
+	Dream Tunnel	Túnel dos sonhos
+	Wavy Arch	Arcada ondulada
+	Roundness:	Arredondamento:
+	Presets	Predefinições
+	Classic	Clássico
+# Dimension tool and its options.
+	Dimension	Cota
+	Dimension Tool	Ferramenta Cota
+	Dimension Tool Options	Opções da ferramenta Cota
+	Linear	Linear
+	Angular	Angular
+	Aligned	Alinhada
+	Precision:	Precisão:
+	Ends:	Extremidades:
+	Arrow	Seta
+	Tick	Traço
+	Dot	Ponto
+	Line Weight:	Espessura da linha:
+	Font Size:	Tamanho da fonte:
+	Show Units	Mostrar unidades
+# 3D lighting and shadows.
+	Light Source	Fonte de luz
+	Softness	Suavidade
+	Shadows	Sombras
+	Below Object	Abaixo do objeto
+	Behind Object	Atrás do objeto
+	Distance	Distância
+	Delete Light	Excluir luz
+	Add Light	Adicionar luz
+	More Lights	Mais luzes
+# 3D materials and lighting presets.
+	Material	Material
+	Highlight	Brilho especular
+	Roughness	Rugosidade
+	Metallic	Metálico
+	Rim Light	Luz de contorno
+	Cel Bands	Faixas cel
+	Reflections	Reflexos
+	Outdoor	Ar livre
+	Sunset	Pôr do sol
+	Ambient Occlusion	Oclusão de ambiente
+	Contact Shadow	Sombra de contato
+	Smooth shading	Sombreamento suave
+	Ambient Color	Cor da luz ambiente
+	Soft Touch	Toque suave
+	Plastic	Plástico
+	Metal	Metal
+	Chrome	Cromo
+	Rim Glow	Brilho de contorno
+	Toon	Toon
+	Standard	Padrão
+	Studio	Estúdio
+	Top Light	Luz superior
+	Dramatic	Dramática
+	Warm & Cool	Quente e fria
+3d	Matte	Fosco

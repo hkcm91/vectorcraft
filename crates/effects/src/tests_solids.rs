@@ -1,6 +1,7 @@
 use serde_json::json;
+use vectorcraft_doc::color::Color;
 use vectorcraft_doc::{Document, NodeId};
-use vectorcraft_geom::{Affine, BezPath};
+use vectorcraft_geom::{Affine, BezPath, Point};
 
 use super::*;
 
@@ -25,6 +26,7 @@ fn faces(art: &Node) -> Vec<&Node> {
     art.children().unwrap().iter().flat_map(|s| s.children().unwrap().iter().map(|f| &**f)).collect()
 }
 
+/// A face's colour.
 fn fill_rgb(n: &Node) -> [f32; 3] {
     match &n.appearance.items[0] {
         AppearanceItem::Fill(f) => f.paint.color().unwrap().to_rgb(),
@@ -32,12 +34,23 @@ fn fill_rgb(n: &Node) -> [f32; 3] {
     }
 }
 
+/// The smooth-shaded image a surface draws (a clip group: the outline, then the image), and its
+/// pixels.
+fn shading_image(surface: &Node) -> (vectorcraft_doc::ImageObject, vectorcraft_doc::generated::Generated) {
+    let group = &surface.children().unwrap()[0];
+    let NodeKind::Group { children, clip: true } = &group.kind else { panic!("a clip group: {:?}", group.kind) };
+    assert!(matches!(children[0].kind, NodeKind::Path { clipping: true, .. }), "clipped to the faces' outline");
+    let NodeKind::Image(im) = &children[1].kind else { panic!("then the image") };
+    let pixels = vectorcraft_doc::generated::get(&im.key).expect("its pixels are stored");
+    ((**im).clone(), pixels)
+}
+
 #[test]
 fn every_solid_draws_shaded_faces_and_leaves_the_source_editable() {
     for id in SOLIDS {
         let mut n = square_node();
         let source = n.path_data().unwrap().clone();
-        n.appearance.effects.push(fx(id, json!({})));
+        n.appearance.effects.push(fx(id, json!({"smoothShading": false})));
         let art = solid_art(&n).unwrap_or_else(|| panic!("{id}"));
         assert_eq!(n.path_data(), Some(&source), "{id}");
         assert!(!faces(&art).is_empty(), "{id}");
@@ -54,13 +67,24 @@ fn every_solid_draws_shaded_faces_and_leaves_the_source_editable() {
         // Hidden, the effect draws nothing of its own.
         n.appearance.effects[0].visible = false;
         assert!(solid_art(&n).is_none(), "{id}");
+        // Smooth shading draws the same red, pixel by pixel.
+        let mut n = square_node();
+        n.appearance.effects.push(fx(id, json!({})));
+        let art = solid_art(&n).unwrap();
+        let (_, pixels) = shading_image(&art.children().unwrap()[0]);
+        let lit: Vec<&[u8]> = pixels.rgba.chunks(4).filter(|p| p[3] == 255 && p[0] > 40).collect();
+        assert!(!lit.is_empty(), "{id}");
+        for p in lit {
+            let [r, g, b] = [p[0], p[1], p[2]].map(f32::from);
+            assert!(r <= 205.0 && (g * 4.0 - r).abs() <= 6.0 && (b * 8.0 - r).abs() <= 10.0, "{id}: {p:?}");
+        }
     }
 }
 
 #[test]
 fn rotate_turns_every_fill_and_stroke_and_the_solids_use_the_top_fill() {
     let mut n = square_node();
-    n.appearance.effects.push(fx(ROTATE, json!({})));
+    n.appearance.effects.push(fx(ROTATE, json!({"smoothShading": false})));
     let art = solid_art(&n).unwrap();
     // The fill's plane and the stroke's outline, each in its own paint.
     let surfaces = art.children().unwrap();
@@ -70,7 +94,7 @@ fn rotate_turns_every_fill_and_stroke_and_the_solids_use_the_top_fill() {
     assert!(paint(&surfaces[1]).iter().all(|c| *c < 0.05), "the black stroke above");
     // Turned 60° about y with no perspective, the stroke's outline spans half its width plus the
     // stroke's own outset, foreshortened as well.
-    n.appearance.effects[0].params = json!({"rotationX": 0, "rotationY": 60, "rotationZ": 0});
+    n.appearance.effects[0].params = json!({"rotationX": 0, "rotationY": 60, "rotationZ": 0, "smoothShading": false});
     let b = solid_art(&n).unwrap().children().unwrap()[1].visual_bounds().unwrap();
     assert!((b.width() - 104.0 * 0.5 - 0.75).abs() < 1e-6, "{b:?}");
     // Extrude & Bevel paints one surface with the top fill.
@@ -127,7 +151,7 @@ fn a_twisted_tapered_hollow_inflate_exports_and_expands() {
     let mut d = Document::new(400.0, 400.0);
     let mut n = square_node();
     n.id = d.alloc_id();
-    let params = json!({"twist": 120, "taper": 50, "cap": false, "bothSides": true, "rotationX": -20, "rotationY": 35});
+    let params = json!({"twist": 120, "taper": 50, "cap": false, "bothSides": true, "rotationX": -20, "rotationY": 35, "smoothShading": false});
     n.appearance.effects.push(fx(INFLATE, params));
     let art = solid_art(&n).unwrap();
     assert_eq!(crate::bake_appearance(&n), Some(art.clone()));
@@ -150,7 +174,7 @@ fn a_twisted_tapered_hollow_inflate_exports_and_expands() {
 fn effects_before_it_shape_the_solid_and_effects_after_it_bend_the_result() {
     let mut n = square_node();
     n.appearance.effects.push(fx("path.offsetPath", json!({"offset": 20})));
-    n.appearance.effects.push(fx(EXTRUDE, json!({"rotationX": 0, "rotationY": 0, "rotationZ": 0, "perspective": 0})));
+    n.appearance.effects.push(fx(EXTRUDE, json!({"rotationX": 0, "rotationY": 0, "rotationZ": 0, "perspective": 0, "smoothShading": false})));
     // Straight on, the extrusion shows its front: the offset square.
     let b = solid_art(&n).unwrap().visual_bounds().unwrap();
     assert!((b.width() - 140.0 - 0.75).abs() < 1e-6, "{b:?}");
@@ -190,4 +214,270 @@ fn inflate_reads_twist_taper_and_cap() {
     let d = inflate_options(&json!({}));
     assert_eq!((d.twist, d.taper, d.cap), (0.0, 1.0, true));
     assert_eq!(crate::default_params(INFLATE).unwrap()["cap"], json!(true));
+}
+
+#[test]
+fn a_coloured_light_tints_the_faces() {
+    let mut n = square_node();
+    n.appearance.effects.push(fx(EXTRUDE, json!({"lightColor": "#0000ff", "ambient": 0.0, "smoothShading": false})));
+    let art = solid_art(&n).unwrap();
+    for f in faces(&art) {
+        let [r, g, _] = fill_rgb(f);
+        assert!(r < 1e-6 && g < 1e-6, "a blue light leaves no red or green: {r} {g}");
+    }
+    // Another light adds to it.
+    let mut m = square_node();
+    m.appearance.effects.push(fx(
+        EXTRUDE,
+        json!({"lightColor": "#0000ff", "ambient": 0.0, "lights": [{"azimuth": 0, "elevation": 0, "intensity": 100, "color": "#ff0000"}], "smoothShading": false}),
+    ));
+    let art = solid_art(&m).unwrap();
+    assert!(faces(&art).iter().any(|f| fill_rgb(f)[0] > 0.1), "the red light reaches some face");
+}
+
+#[test]
+fn a_shadow_is_a_blurred_black_shape_behind_the_faces() {
+    for id in SOLIDS {
+        let mut n = square_node();
+        n.appearance.effects.push(fx(id, json!({"shadow": "below", "shadowDistance": 10, "shadowOpacity": 60, "shadowSoftness": 50})));
+        let art = solid_art(&n).unwrap_or_else(|| panic!("{id}"));
+        let first = &art.children().unwrap()[0];
+        let shadow = if first.path_data().is_some() { first } else { &first.children().unwrap()[0] };
+        assert!(shadow.path_data().is_some(), "{id}: the shadow comes first");
+        assert_eq!(fill_rgb(shadow), [0.0, 0.0, 0.0], "{id}");
+        assert!((shadow.opacity - 0.6).abs() < 1e-6, "{id}");
+        assert!(shadow.appearance.effects.iter().any(|e| e.id == "blur.gaussian"), "{id}: softened by a blur");
+    }
+    let mut n = square_node();
+    n.appearance.effects.push(fx(EXTRUDE, json!({})));
+    let art = solid_art(&n).unwrap();
+    assert!(art.children().unwrap()[0].path_data().is_none(), "no shadow unless asked");
+}
+
+#[test]
+fn bad_lighting_params_are_refused() {
+    let n = square_node();
+    for p in [
+        json!({"shadow": "sideways"}),
+        json!({"lightColor": "bright"}),
+        json!({"lights": [{}, {}, {}, {}]}),
+        json!({"lights": [{"color": 3}]}),
+        json!({"lights": [7]}),
+    ] {
+        assert!(validate_solid(&n, EXTRUDE, &p).is_err(), "{p}");
+    }
+    assert!(validate_solid(&n, EXTRUDE, &json!({"shadow": "behind", "lights": [{"azimuth": 10, "color": "#ffcc00"}]})).is_ok());
+}
+
+/// Every colour a face's first fill paints.
+fn face_colours(n: &Node) -> Vec<[f32; 3]> {
+    vec![fill_rgb(n)]
+}
+
+#[test]
+fn smooth_shading_is_on_for_new_effects_and_off_for_saved_ones_without_it() {
+    for id in SOLIDS {
+        let mut n = square_node();
+        n.appearance.effects.push(fx(id, json!({"rotationY": -40})));
+        let art = solid_art(&n).unwrap();
+        // New effects shade pixel by pixel: an image, clipped to the faces' outline, covering it.
+        let (im, pixels) = shading_image(&art.children().unwrap()[0]);
+        assert_eq!((pixels.width, pixels.height), (im.width, im.height));
+        let outline = art.children().unwrap()[0].children().unwrap()[0].children().unwrap()[0].path_data().unwrap().bounds().unwrap();
+        let placed = im.xf.transform_rect_bbox(vectorcraft_geom::Rect::new(0.0, 0.0, f64::from(im.width), f64::from(im.height)));
+        assert!(placed.contains(outline.origin()) && placed.contains(Point::new(outline.x1, outline.y1)), "{id}: {placed:?} {outline:?}");
+        // The same art again shows the same pixels.
+        assert_eq!(solid_art(&n).unwrap(), art, "{id}");
+        // An effect saved before the option existed has no key: flat faces, as it was drawn then.
+        n.appearance.effects[0].params.as_object_mut().unwrap().remove("smoothShading");
+        let art = solid_art(&n).unwrap();
+        assert!(faces(&art).iter().all(|f| matches!(f.kind, NodeKind::Path { .. }) && face_colours(f).len() == 1), "{id}");
+    }
+}
+
+#[test]
+fn other_paints_are_multiplied_by_the_shading_pixel_by_pixel() {
+    let mut n = square_node();
+    if let AppearanceItem::Fill(f) = &mut n.appearance.items[0] {
+        f.paint = Paint::Pattern { pattern: "dots".into(), xf: Affine::IDENTITY };
+    }
+    n.appearance.effects.push(fx(INFLATE, json!({"specular": 80})));
+    let art = solid_art(&n).unwrap();
+    let group = &art.children().unwrap()[0].children().unwrap()[0];
+    assert!(group.isolate, "the blends act on the paint alone");
+    let NodeKind::Group { children, clip: true } = &group.kind else { panic!("{:?}", group.kind) };
+    // The clip, the paint filling the outline, then the shading's tint multiplied and its
+    // highlight screened over it.
+    assert_eq!(children.len(), 4);
+    let AppearanceItem::Fill(fill) = &children[1].appearance.items[0] else { panic!("a fill") };
+    assert!(matches!(fill.paint, Paint::Pattern { .. }));
+    assert_eq!((children[2].blend, children[3].blend), (BlendMode::Multiply, BlendMode::Screen));
+    for (k, c) in children[2..].iter().enumerate() {
+        let NodeKind::Image(im) = &c.kind else { panic!("an image") };
+        let px = vectorcraft_doc::generated::get(&im.key).unwrap();
+        assert!(px.rgba.chunks(4).any(|p| p[3] == 255 && p[0] > 0), "layer {k} paints");
+    }
+    // Saved flat, it keeps its vector faces.
+    n.appearance.effects[0].params["smoothShading"] = json!(false);
+    assert!(faces(&solid_art(&n).unwrap()).iter().all(|f| matches!(f.kind, NodeKind::Path { .. })));
+}
+
+#[test]
+fn options_added_later_keep_saved_effects_as_they_were() {
+    // New effects store occlusion, the contact shadow and a studio to reflect…
+    let new = fx(EXTRUDE, json!({}));
+    assert_eq!(new.params["ambientOcclusion"], json!(60.0));
+    assert_eq!(new.params["contactShadow"], json!(60.0));
+    assert_eq!(new.params["environment"], json!("studio"));
+    let p = crate::lighting::drawing_params(EXTRUDE, &new.params);
+    let l = crate::lighting::lighting(&p);
+    assert_eq!((l.material.occlusion, l.material.environment), (0.6, vectorcraft_three_d::Environment::Studio));
+    // …an effect saved before them draws as it did: none of them.
+    let saved = json!({"smoothShading": true, "specular": 50});
+    let p = crate::lighting::drawing_params(EXTRUDE, &saved);
+    assert_eq!((p["ambientOcclusion"].clone(), p["contactShadow"].clone(), p["environment"].clone()), (json!(0.0), json!(0.0), json!("gradient")));
+    assert!(validate_solid(&square_node(), EXTRUDE, &json!({"environment": "moon"})).unwrap_err().contains("environment must be"));
+    assert!(validate_solid(&square_node(), EXTRUDE, &json!({"environment": "sunset"})).is_ok());
+}
+
+#[test]
+fn a_contact_shadow_sits_tight_under_the_object() {
+    let mut n = square_node();
+    n.appearance.effects.push(fx(INFLATE, json!({"shadow": "below", "shadowOpacity": 40, "contactShadow": 80})));
+    let art = solid_art(&n).unwrap();
+    let parts = art.children().unwrap();
+    // The cast shadow, then the contact shadow, then the surface.
+    let (cast, contact) = (&parts[0], &parts[1]);
+    assert!(cast.path_data().is_some() && contact.path_data().is_some());
+    assert!(contact.opacity > cast.opacity, "darker: {} vs {}", contact.opacity, cast.opacity);
+    let blur = |m: &Node| m.appearance.effects.iter().find(|e| e.id == "blur.gaussian").map(|e| e.params["radius"].as_f64().unwrap()).unwrap();
+    assert!(blur(contact) < blur(cast), "and tighter");
+    let (cb, sb) = (contact.path_data().unwrap().bounds().unwrap(), cast.path_data().unwrap().bounds().unwrap());
+    assert!(cb.height() < sb.height(), "only where the object meets the ground: {cb:?} {sb:?}");
+    // Off, or lifted clear of the ground: only the cast shadow.
+    n.appearance.effects[0].params["contactShadow"] = json!(0);
+    assert_eq!(solid_art(&n).unwrap().children().unwrap().len(), 2);
+    n.appearance.effects[0].params["contactShadow"] = json!(80);
+    n.appearance.effects[0].params["shadowDistance"] = json!(60);
+    assert_eq!(solid_art(&n).unwrap().children().unwrap().len(), 2);
+}
+
+#[test]
+fn exporting_and_expanding_smooth_shading_embeds_its_image() {
+    let mut d = Document::new(400.0, 400.0);
+    let mut n = square_node();
+    n.id = d.alloc_id();
+    n.appearance.effects.push(fx(INFLATE, json!({})));
+    let l = d.layers[0].id;
+    d.insert(Some(l), 0, n.clone()).unwrap();
+    let baked = crate::bake_document(&d).unwrap();
+    let mut keys = vec![];
+    for layer in &baked.layers {
+        layer.walk(&mut |m: &Node| {
+            if let NodeKind::Image(im) = &m.kind {
+                keys.push(im.key.clone());
+            }
+        });
+    }
+    assert_eq!(keys.len(), 1);
+    let blob = baked.images.get(&keys[0]).expect("the export copy holds the image");
+    assert_eq!(blob.mime, "image/png");
+    assert!(d.images.is_empty(), "the document itself is unchanged");
+    // Expand Appearance leaves an image of the document's own.
+    let mut stroke = |_: &mut Document, _: &PathData, _: FillRule, _: &StrokeLayer| None;
+    let expanded = crate::expand_leaf(&mut d, &n, &mut stroke).unwrap();
+    let mut found = 0;
+    expanded.walk(&mut |m: &Node| {
+        if let NodeKind::Image(im) = &m.kind {
+            assert!(d.images.contains_key(&im.key));
+            found += 1;
+        }
+    });
+    assert_eq!(found, 1);
+}
+
+#[test]
+fn a_glossy_highlight_lifts_a_face_above_its_paint_and_matte_never_does() {
+    // The light straight ahead of a face turned to it: the highlight's peak.
+    let lit = json!({"rotationX": 0, "rotationY": 0, "rotationZ": 0, "lightAzimuth": 0, "lightElevation": 0, "smoothShading": false});
+    let mut matte = square_node();
+    matte.appearance.effects.push(fx(EXTRUDE, lit.clone()));
+    let mut glossy = square_node();
+    let mut p = lit.clone();
+    p.as_object_mut().unwrap().extend([("specular".into(), json!(100)), ("roughness".into(), json!(20))]);
+    glossy.appearance.effects.push(fx(EXTRUDE, p));
+    let brightest = |n: &Node| faces(&solid_art(n).unwrap()).iter().flat_map(|f| face_colours(f)).map(|c| c[1]).fold(0.0f32, f32::max);
+    // The paint's green is 0.2: matte light never brightens it, a highlight adds white.
+    assert!(brightest(&matte) <= 0.2 + 1e-5);
+    assert!(brightest(&glossy) > 0.8, "{}", brightest(&glossy));
+}
+
+#[test]
+fn every_preset_validates_and_bad_material_params_are_refused() {
+    let n = square_node();
+    for (name, p) in crate::MATERIAL_PRESETS {
+        let params: serde_json::Map<String, Value> = p.iter().map(|(k, v)| ((*k).to_string(), json!(v))).collect();
+        assert!(validate_solid(&n, EXTRUDE, &Value::Object(params)).is_ok(), "{name}");
+    }
+    for preset in crate::LIGHTING_PRESETS {
+        assert!(validate_solid(&n, INFLATE, &Value::Object(preset.params())).is_ok(), "{}", preset.id);
+    }
+    for p in [json!({"shadingSteps": 9}), json!({"shadingSteps": -1}), json!({"rimColor": "glow"}), json!({"ambientColor": 4})] {
+        assert!(validate_solid(&n, EXTRUDE, &p).is_err(), "{p}");
+    }
+}
+
+#[test]
+fn a_lighting_preset_matches_its_own_params_and_not_another() {
+    let defaults = crate::default_params(EXTRUDE).unwrap();
+    let standard = &crate::LIGHTING_PRESETS[0];
+    // The defaults are the Standard preset.
+    assert!(standard.matches(&serde_json::Map::new(), &defaults));
+    let studio = &crate::LIGHTING_PRESETS[1];
+    assert!(studio.matches(&studio.params(), &defaults));
+    assert!(!standard.matches(&studio.params(), &defaults));
+    let mut tweaked = studio.params();
+    tweaked.insert("lightColor".into(), json!("#FFFFFF"));
+    assert!(studio.matches(&tweaked, &defaults), "colours compare ignoring case");
+    tweaked.insert("ambient".into(), json!(30));
+    assert!(!studio.matches(&tweaked, &defaults));
+}
+
+#[test]
+fn the_dramatic_preset_keeps_its_shadow_side_readable() {
+    // A sphere's far side, turned away from the key light: still clearly the paint, not black.
+    let preset = crate::lighting::LIGHTING_PRESETS.iter().find(|p| p.id == "dramatic").unwrap();
+    let mut params = preset.params();
+    params.insert("volume".into(), json!(50));
+    params.insert("rotationX".into(), json!(0));
+    params.insert("rotationY".into(), json!(0));
+    params.insert("rotationZ".into(), json!(0));
+    let mut b = BezPath::new();
+    b.extend(vectorcraft_geom::Shape::path_elements(&kurbo::Circle::new((150.0, 150.0), 50.0), 0.01));
+    let mut n = Node::path(NodeId(1), PathData::from_bezpath(&b), Appearance::basic(Paint::solid(RED), Paint::None, 0.0));
+    n.appearance.effects.push(fx(INFLATE, Value::Object(params)));
+    let (_, pixels) = shading_image(&solid_art(&n).unwrap().children().unwrap()[0]);
+    let w = pixels.width as usize;
+    let h = pixels.height as usize;
+    // Three quarters of the way across, away from the key light on the left.
+    let p = &pixels.rgba[((h / 2) * w + w * 3 / 4) * 4..][..4];
+    assert!(p[0] >= 40, "the dark side shows the red: {p:?}");
+    let lit = &pixels.rgba[((h / 2) * w + w / 4) * 4..][..4];
+    assert!(lit[0] > p[0] + 60, "and stays clearly darker than the lit side: {lit:?} {p:?}");
+}
+
+#[test]
+fn a_draft_preview_shades_coarser_and_the_same_art_is_made_once() {
+    let mut n = square_node();
+    n.appearance.effects.push(fx(INFLATE, json!({"specular": 60})));
+    let full = solid_art(&n).unwrap();
+    // The same object again: the remembered art, the same image.
+    assert_eq!(solid_art(&n).unwrap(), full);
+    let (im, _) = shading_image(&full.children().unwrap()[0]);
+    n.appearance.effects[0].params["draftPreview"] = json!(true);
+    let draft = solid_art(&n).unwrap();
+    let (dm, _) = shading_image(&draft.children().unwrap()[0]);
+    assert!(f64::from(dm.width) <= vectorcraft_three_d::DRAFT_SIDE + 6.0 && im.width > 2 * dm.width, "{} {}", im.width, dm.width);
+    // The validated parameters take the flag.
+    assert!(validate_solid(&n, INFLATE, &n.appearance.effects[0].params).is_ok());
 }

@@ -4296,3 +4296,83 @@ lighting	Light	Світло
 @msg	unknown parameter `{key}`; the command takes: {keys}	невідомий параметр `{key}`; команда приймає: {keys}
 	Load EPS into Clipboard	Завантажити EPS у буфер обміну
 @msg	an image of {w} × {h} pixels is too large to draw	зображення розміром {w} × {h} пікселів завелике для відображення
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Арка
+	Arch Tool	Інструмент «Арка»
+	Arch Tool Options	Параметри інструменту «Арка»
+	Arch Count:	Кількість арок:
+	Thickness:	Товщина:
+	Segments:	Сегменти:
+	Close into Rings	Замкнути в кільця
+	Color Palette	Палітра кольорів
+	Add Color	Додати колір
+	Remove Color	Вилучити колір
+	Shuffle Colors	Перемішати кольори
+	Fill Style	Стиль заливки
+	Wide	Широка
+	Pointed	Стрілчаста
+	Scallop	Фестон
+	Wavy	Хвиляста
+	Segmented	Сегментована
+	Flat	Пласка
+	Glossy	Глянцева
+	Jelly	Желе
+	Muted	Приглушена
+	Pearlescent	Перламутрова
+	Classic Rainbow	Класична веселка
+	Candy Arch	Льодяникова арка
+	Double Arch	Подвійна арка
+	Scallop Gate	Фестонна брама
+	Dream Tunnel	Казковий тунель
+	Wavy Arch	Хвиляста арка
+# Dimension tool and its options.
+	Dimension	Розмір
+	Dimension Tool	Інструмент «Розмір»
+	Dimension Tool Options	Параметри інструменту «Розмір»
+	Linear	Лінійний
+	Angular	Кутовий
+	Aligned	Паралельний
+	Precision:	Точність:
+	Ends:	Кінці:
+	Arrow	Стрілка
+	Tick	Засічка
+	Dot	Крапка
+	Line Weight:	Товщина лінії:
+	Font Size:	Розмір шрифту:
+	Show Units	Показувати одиниці
+# 3D lighting and shadows.
+	Light Source	Джерело світла
+	Softness	М’якість
+	Shadows	Тіні
+	Below Object	Під об’єктом
+	Behind Object	За об’єктом
+	Distance	Відстань
+	Delete Light	Видалити світло
+	Add Light	Додати світло
+	More Lights	Додаткове світло
+# 3D materials and lighting presets.
+	Material	Матеріал
+	Highlight	Відблиск
+	Roughness	Шорсткість
+	Metallic	Металевість
+	Rim Light	Контурне світло
+	Cel Bands	Смуги cel
+	Reflections	Відбиття
+	Outdoor	Надворі
+	Sunset	Захід сонця
+	Ambient Occlusion	Фонове затінення
+	Contact Shadow	Контактна тінь
+	Smooth shading	Плавне затінення
+	Ambient Color	Колір розсіяного світла
+	Soft Touch	Софт-тач
+	Plastic	Пластик
+	Metal	Метал
+	Chrome	Хром
+	Rim Glow	Контурне сяйво
+	Toon	Мультяшний
+	Standard	Стандартний
+	Studio	Студія
+	Top Light	Верхнє світло
+	Dramatic	Драматичний
+	Warm & Cool	Теплий і холодний
+3d	Matte	Матовий

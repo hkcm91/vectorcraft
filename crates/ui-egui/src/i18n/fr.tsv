@@ -4747,3 +4747,78 @@ mark-style	Japanese	Japonais
 theme	Appearance	Apparence
 	Load EPS into Clipboard	Charger un EPS dans le presse-papiers
 @msg	an image of {w} × {h} pixels is too large to draw	une image de {w} × {h} pixels est trop grande pour être dessinée
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Arche
+	Arch Tool	Outil Arche
+	Arch Tool Options	Options de l’outil Arche
+	Arch Count:	Nombre d’arches :
+	Thickness:	Épaisseur :
+	Segments:	Segments :
+	Close into Rings	Fermer en anneaux
+	Color Palette	Palette de couleurs
+	Add Color	Ajouter une couleur
+	Remove Color	Supprimer une couleur
+	Shuffle Colors	Mélanger les couleurs
+	Fill Style	Style de remplissage
+	Wide	Large
+	Pointed	Brisée
+	Wavy	Ondulée
+	Segmented	Segmentée
+	Flat	Uni
+	Glossy	Brillant
+	Jelly	Gelée
+	Pearlescent	Nacré
+	Classic Rainbow	Arc-en-ciel classique
+	Candy Arch	Arche bonbon
+	Double Arch	Double arche
+	Scallop Gate	Porte festonnée
+	Dream Tunnel	Tunnel de rêve
+	Wavy Arch	Arche ondulée
+# Dimension tool and its options.
+	Dimension	Cote
+	Dimension Tool	Outil Cote
+	Dimension Tool Options	Options de l’outil Cote
+	Angular	Angulaire
+	Aligned	Alignée
+	Precision:	Précision :
+	Ends:	Extrémités :
+	Tick	Trait
+	Dot	Point
+	Line Weight:	Épaisseur du trait :
+	Font Size:	Corps :
+	Show Units	Afficher les unités
+# 3D lighting and shadows.
+	Light Source	Source lumineuse
+	Softness	Douceur
+	Shadows	Ombres
+	Below Object	Sous l’objet
+	Behind Object	Derrière l’objet
+	Delete Light	Supprimer la lumière
+	Add Light	Ajouter une lumière
+	More Lights	Autres lumières
+# 3D materials and lighting presets.
+	Material	Matériau
+	Highlight	Reflet
+	Roughness	Rugosité
+	Metallic	Métallique
+	Rim Light	Lumière de contour
+	Cel Bands	Bandes cel
+	Reflections	Reflets
+	Outdoor	Extérieur
+	Sunset	Coucher de soleil
+	Ambient Occlusion	Occlusion ambiante
+	Contact Shadow	Ombre de contact
+	Smooth shading	Ombrage lisse
+	Ambient Color	Couleur de la lumière ambiante
+	Soft Touch	Toucher doux
+	Plastic	Plastique
+	Metal	Métal
+	Chrome	Chrome
+	Rim Glow	Halo de contour
+	Toon	Toon
+	Standard	Standard
+	Studio	Studio
+	Top Light	Lumière zénithale
+	Dramatic	Dramatique
+	Warm & Cool	Chaud et froid
+3d	Matte	Mat

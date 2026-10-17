@@ -4747,3 +4747,78 @@ mark-style	Japanese	Japonské
 @msg	unknown parameter `{key}`; the command takes: {keys}	neznámý parametr `{key}`; příkaz přijímá: {keys}
 	Load EPS into Clipboard	Načíst EPS do schránky
 @msg	an image of {w} × {h} pixels is too large to draw	obraz o velikosti {w} × {h} obrazových bodů je příliš velký na vykreslení
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Klenba
+	Arch Tool	Nástroj Klenba
+	Arch Tool Options	Možnosti nástroje Klenba
+	Arch Count:	Počet oblouků:
+	Thickness:	Tloušťka:
+	Segments:	Počet dílů:
+	Close into Rings	Uzavřít do prstenců
+	Color Palette	Paleta barev
+	Add Color	Přidat barvu
+	Remove Color	Odebrat barvu
+	Shuffle Colors	Zamíchat barvy
+	Fill Style	Styl výplně
+	Wide	Široký
+	Pointed	Lomený
+	Wavy	Vlnitý
+	Segmented	Dělený
+	Flat	Plochý
+	Glossy	Lesklý
+	Jelly	Želé
+	Pearlescent	Perleťový
+	Classic Rainbow	Klasická duha
+	Candy Arch	Bonbonová klenba
+	Double Arch	Dvojitá klenba
+	Scallop Gate	Vroubkovaná brána
+	Dream Tunnel	Snový tunel
+	Wavy Arch	Vlnitá klenba
+# Dimension tool and its options.
+	Dimension	Kóta
+	Dimension Tool	Nástroj Kóta
+	Dimension Tool Options	Možnosti nástroje Kóta
+	Angular	Úhlová
+	Aligned	Zarovnaná
+	Precision:	Přesnost:
+	Ends:	Konce:
+	Tick	Čárka
+	Dot	Tečka
+	Line Weight:	Tloušťka čáry:
+	Font Size:	Velikost písma:
+	Show Units	Zobrazit jednotky
+# 3D lighting and shadows.
+	Light Source	Zdroj světla
+	Softness	Měkkost
+	Shadows	Stíny
+	Below Object	Pod objektem
+	Behind Object	Za objektem
+	Delete Light	Odstranit světlo
+	Add Light	Přidat světlo
+	More Lights	Další světla
+# 3D materials and lighting presets.
+	Material	Materiál
+	Highlight	Odlesk
+	Roughness	Drsnost
+	Metallic	Kovovost
+	Rim Light	Obrysové světlo
+	Cel Bands	Pásma cel
+	Reflections	Odrazy
+	Outdoor	Venku
+	Sunset	Západ slunce
+	Ambient Occlusion	Okluze okolí
+	Contact Shadow	Kontaktní stín
+	Smooth shading	Hladké stínování
+	Ambient Color	Barva okolního světla
+	Soft Touch	Jemný dotek
+	Plastic	Plast
+	Metal	Kov
+	Chrome	Chrom
+	Rim Glow	Obrysová záře
+	Toon	Kreslený
+	Standard	Standardní
+	Studio	Studio
+	Top Light	Horní světlo
+	Dramatic	Dramatické
+	Warm & Cool	Teplé a studené
+3d	Matte	Matný

@@ -52,6 +52,7 @@ fn write(doc: &Document, opts: &ExportOptions, native: Option<&[u8]>, id_prefix:
         classes: Vec::new(),
         class_ids: HashMap::new(),
         used_ids: HashSet::new(),
+        next_ids: HashMap::new(),
         names: HashMap::new(),
         depth: 1,
         patterns: HashMap::new(),
@@ -265,6 +266,9 @@ struct Writer<'a> {
     /// 1-based class/entity number by declaration; avoids a linear scan for each style.
     class_ids: HashMap<String, usize>,
     used_ids: HashSet<String>,
+    /// The number [`Self::fresh_id`] tries next for each prefix, so thousands of defs don't each
+    /// count up from 1 past all the ids taken before them.
+    next_ids: HashMap<String, usize>,
     names: HashMap<NodeId, String>,
     depth: usize,
     /// `<pattern>` def ids by pattern name + placement.
@@ -542,13 +546,14 @@ impl Writer<'_> {
     }
 
     fn fresh_id(&mut self, prefix: &str) -> String {
-        let mut i = 1;
+        let mut i = self.next_ids.get(prefix).copied().unwrap_or(1);
         loop {
             let id = format!("{}{prefix}-{i}", self.id_prefix);
+            i += 1;
             if self.used_ids.insert(id.clone()) {
+                self.next_ids.insert(prefix.to_string(), i);
                 return id;
             }
-            i += 1;
         }
     }
     /// `base` (with the unique prefix) if free, else `base-2`, `base-3`…

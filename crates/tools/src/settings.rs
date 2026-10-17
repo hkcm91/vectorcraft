@@ -36,6 +36,10 @@ const ROWS: &[Row] = &[
     (&["star"], None, &["points"]),
     (&["freeTransform"], None, &["constrain"]),
     (&["artboard"], None, &["moveArt", "scaleArt"]),
+    // Dimension Tool Options (`dimension::NUMBERS`, the type, orientation, units, ends, colour).
+    (&["dimension"], None, &["type", "orientation", "units", "precision", "scale", "ends", "strokeWidth", "fontSize", "color", "showUnits"]),
+    // Arch Tool Options (`arch::ARCH_NUMBERS`, the shape, ends, fill style and colours).
+    (&["arch"], None, &["count", "thickness", "spacing", "roundness", "segments", "shape", "ends", "fillStyle", "colors"]),
     // Flare Tool Options (`extra::FLARE_OPTIONS` and the Rays and Rings checkboxes).
     (
         &["flare"],

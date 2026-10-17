@@ -70,6 +70,8 @@ mod tests_automation;
 #[cfg(test)]
 mod tests_background;
 #[cfg(test)]
+mod tests_blendactions;
+#[cfg(test)]
 mod tests_clipboard;
 #[cfg(test)]
 mod tests_contextmenu;

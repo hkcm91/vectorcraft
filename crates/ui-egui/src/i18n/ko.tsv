@@ -4280,3 +4280,83 @@ lighting	Light	광원
 @msg	unknown parameter `{key}`; the command takes: {keys}	알 수 없는 매개변수 `{key}`: 이 명령이 받는 매개변수: {keys}
 	Load EPS into Clipboard	EPS를 클립보드로 불러오기
 @msg	an image of {w} × {h} pixels is too large to draw	{w} × {h}픽셀 이미지는 너무 커서 그릴 수 없습니다
+# Arch tool and its options (a VectorCraft addition).
+	Arch	아치
+	Arch Tool	아치 도구
+	Arch Tool Options	아치 도구 옵션
+	Arch Count:	아치 수:
+	Thickness:	두께:
+	Segments:	분할 수:
+	Close into Rings	고리로 닫기
+	Color Palette	색상 팔레트
+	Add Color	색상 추가
+	Remove Color	색상 제거
+	Shuffle Colors	색상 섞기
+	Fill Style	칠 스타일
+	Wide	넓게
+	Pointed	뾰족하게
+	Scallop	가리비
+	Wavy	물결
+	Segmented	분할
+	Flat	단색
+	Glossy	광택
+	Jelly	젤리
+	Muted	차분하게
+	Pearlescent	펄
+	Classic Rainbow	클래식 무지개
+	Candy Arch	캔디 아치
+	Double Arch	더블 아치
+	Scallop Gate	가리비 게이트
+	Dream Tunnel	드림 터널
+	Wavy Arch	물결 아치
+# Dimension tool and its options.
+	Dimension	치수
+	Dimension Tool	치수 도구
+	Dimension Tool Options	치수 도구 옵션
+	Linear	선형
+	Angular	각도
+	Aligned	정렬
+	Precision:	정밀도:
+	Ends:	끝:
+	Arrow	화살표
+	Tick	눈금
+	Dot	점
+	Line Weight:	선 두께:
+	Font Size:	글꼴 크기:
+	Show Units	단위 표시
+# 3D lighting and shadows.
+	Light Source	광원
+	Softness	부드러움
+	Shadows	그림자
+	Below Object	오브젝트 아래
+	Behind Object	오브젝트 뒤
+	Distance	거리
+	Delete Light	조명 삭제
+	Add Light	조명 추가
+	More Lights	추가 조명
+# 3D materials and lighting presets.
+	Material	재질
+	Highlight	하이라이트
+	Roughness	거칠기
+	Metallic	금속성
+	Rim Light	림 라이트
+	Cel Bands	셀 단계
+	Reflections	반사
+	Outdoor	실외
+	Sunset	노을
+	Ambient Occlusion	앰비언트 오클루전
+	Contact Shadow	접지 그림자
+	Smooth shading	부드러운 음영
+	Ambient Color	주변광 색상
+	Soft Touch	소프트 터치
+	Plastic	플라스틱
+	Metal	금속
+	Chrome	크롬
+	Rim Glow	림 글로우
+	Toon	툰
+	Standard	표준
+	Studio	스튜디오
+	Top Light	탑 라이트
+	Dramatic	드라마틱
+	Warm & Cool	따뜻함과 차가움
+3d	Matte	무광

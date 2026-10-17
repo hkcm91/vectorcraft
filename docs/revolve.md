@@ -61,7 +61,7 @@ its approximation for intersecting surfaces. Expansion changes are undoable with
 - Open profiles produce uncapped surfaces. Closed profile boundaries are swept as provided.
 - One Revolve per source object. Edit its options rather than applying another.
 - Object-level Revolve uses the top visible fill, falling back to a stroke. Per-item Revolve uses that item's paint.
-- Flat shading, one directional light, no textures, cast shadows, end caps or physical materials.
+- Up to four coloured, soft-edged lights, a shadow below or behind, and our own materials (highlight, metallic, rim light, cel bands, smooth shading; see [three-d.md](three-d.md#materials)); no textures or end caps.
 - Faces use back-to-front depth sorting. Intersecting profiles can have incorrect visibility.
 - Curves use sixteen samples per segment; profiles are limited to 1,024 samples and surfaces to 32,768 faces.
 - Axis, bounds and ordinary selection handles continue to refer to the editable 2D source profile.

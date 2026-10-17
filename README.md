@@ -228,7 +228,7 @@ The scores are self-assessed from our code against Illustrator's public document
 **What's missing:**
 - reliable exchange of Illustrator's own `.ai` files (layer structure in real files; Illustrator's editing data isn't written);
 - an interaction-fidelity pass covering every tool's modifiers and small behaviours;
-- 3D and Materials beyond the initial live Revolve (Extrude & Bevel, Inflate, Rotate, materials);
+- in 3D and Materials, Substance materials, textures, graphics mapped onto surfaces and ray tracing (Revolve, Extrude & Bevel, Inflate and Rotate work, with lights, shadows and our own materials);
 - about half of the Photoshop-style raster effects (28 of 57 still missing; Film Grain is available under Artistic) and the Effect Gallery;
 - CJK composition for vertical type (vertical type itself has initial support, with a Japanese interface);
 - scripting, and the rest of Variables (image and graph kinds, dataset import);
