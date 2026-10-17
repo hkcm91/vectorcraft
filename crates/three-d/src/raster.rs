@@ -182,6 +182,12 @@ fn signed(c: &[(f64, f64)]) -> f64 {
 }
 
 impl Shading {
+    /// The faces it shades.
+    #[cfg(test)]
+    pub(crate) fn polys(&self) -> &[Poly] {
+        &self.polys
+    }
+
     pub(crate) fn new(rig: Rig, reach: f64, polys: Vec<Poly>) -> Self {
         Self { rig, reach, polys }
     }

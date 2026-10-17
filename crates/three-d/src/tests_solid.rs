@@ -260,10 +260,10 @@ fn the_inflate_membrane_matches_known_solutions() {
     let mut c = BezPath::new();
     c.extend(vectorcraft_geom::kurbo::Shape::path_elements(&vectorcraft_geom::kurbo::Circle::new((100.0, 100.0), 50.0), 0.01));
     let (p, b) = shape(&c);
-    let disc = Membrane::solve(&rings(&p, 100.0, MAX_SOLID_POINTS).unwrap(), b.origin(), b.width() / 48.0, 49, 49);
+    let disc = Membrane::solve(&rings(&p, 100.0, MAX_SOLID_POINTS).unwrap(), b.origin(), b.width() / 48.0, 49, 49, None);
     assert!(close(disc.peak, 50.0 * 50.0 / 4.0, 625.0 * 0.02), "{}", disc.peak);
     let (p, b) = shape(&square(0.0, 0.0, 100.0));
-    let sq = Membrane::solve(&rings(&p, 100.0, MAX_SOLID_POINTS).unwrap(), b.origin(), 100.0 / 48.0, 49, 49);
+    let sq = Membrane::solve(&rings(&p, 100.0, MAX_SOLID_POINTS).unwrap(), b.origin(), 100.0 / 48.0, 49, 49, None);
     assert!(close(sq.peak, 0.07367 * 100.0 * 100.0, 736.7 * 0.02), "{}", sq.peak);
     // Smooth across the middle: no crease where a distance-to-the-edge height would have one
     // (the diagonals). The second difference along a diagonal stays small and even.
@@ -601,4 +601,36 @@ fn a_cell_is_cut_to_the_shape_exactly() {
     let tri = |o: f64| vec![Point::new(o, 0.0), Point::new(o + 10.0, 0.0), Point::new(o + 5.0, 8.0)];
     assert!(rings_cross(&[tri(0.0), tri(5.0)], &Edges::new(&[tri(0.0), tri(5.0)])));
     assert!(!rings_cross(&[tri(0.0), tri(20.0)], &Edges::new(&[tri(0.0), tri(20.0)])));
+}
+
+/// A ring's surface is round, so its normals point straight across the ring, with no sideways
+/// lean, rim included: a mirror finish shows a lean of a degree or two as streaks across the rim.
+/// (The finely flattened outline once had too few pieces per curve, and the slope near the
+/// outline was read from grid nodes a hair from it: both leaned the normals by up to 0.05.)
+#[test]
+fn an_inflated_ring_has_no_sideways_lean_in_its_normals() {
+    use vectorcraft_geom::kurbo::{Circle, Shape};
+    let mut ring = BezPath::new();
+    ring.extend(Circle::new((100.0, 100.0), 80.0).path_elements(0.01));
+    let hole: BezPath = Circle::new((100.0, 100.0), 35.0).path_elements(0.01).collect();
+    ring.extend(hole.reverse_subpaths());
+    let (p, r) = shape(&ring);
+    let view = View { material: Material { smooth: true, ..Material::default() }, ..front() };
+    let shaded = inflate_lit(&p, r, Inflate { volume: 80.0, ..Inflate::default() }, view).unwrap();
+    let shading = shaded.shading.unwrap();
+    // The ring's centre in view space: the mean of its front's points.
+    let front: Vec<(V3, V3)> =
+        shading.polys().iter().flat_map(|poly| poly.positions.iter().copied().zip(poly.normals.iter().copied())).filter(|(_, n)| n.2 > 0.0).collect();
+    let k = front.len() as f64;
+    let (cx, cy) = front.iter().fold((0.0, 0.0), |s, (p, _)| (s.0 + p.0 / k, s.1 + p.1 / k));
+    let mut worst: f64 = 0.0;
+    for (p, n) in &front {
+        let (dx, dy) = (p.0 - cx, p.1 - cy);
+        let l = dx.hypot(dy);
+        if l < 1.0 {
+            continue;
+        }
+        worst = worst.max(((-dy * n.0 + dx * n.1) / l).abs());
+    }
+    assert!(worst < 0.012, "the normals lean sideways by up to {worst}");
 }

@@ -316,14 +316,16 @@ impl Inflate {
 const MAX_SOLID_POINTS: usize = 2048;
 /// Outline points Rotate samples at most: it only turns the outline, so an outlined paragraph fits.
 const MAX_PLANE_POINTS: usize = 65536;
+/// The most pieces one curve of the finely flattened outline Inflate's normals follow is cut into.
+const FINE_PIECES: u32 = 512;
 
 /// How many straight pieces follow `c` within `tolerance` (Wang's bound on a cubic's distance from
-/// its chords), 1 to 32.
-fn pieces(c: vectorcraft_geom::CubicBez, tolerance: f64) -> u32 {
+/// its chords), 1 to `most`.
+fn pieces(c: vectorcraft_geom::CubicBez, tolerance: f64, most: u32) -> u32 {
     let d = |a: Point, b: Point, c: Point| (a.to_vec2() - 2.0 * b.to_vec2() + c.to_vec2()).hypot();
     let bend = d(c.p0, c.p1, c.p2).max(d(c.p1, c.p2, c.p3));
     let n = (0.75 * bend / tolerance).sqrt().ceil();
-    if n.is_finite() { (n as u32).clamp(1, 32) } else { 32 }
+    if n.is_finite() { (n as u32).clamp(1, most) } else { most }
 }
 
 /// The rings of a shape: closed polygons with the filled side on their left, (-dy, dx): outer
@@ -331,11 +333,11 @@ fn pieces(c: vectorcraft_geom::CubicBez, tolerance: f64) -> u32 {
 /// are followed within a tolerance of 1/2000 of `size` (at least 0.05 pt), so small curves take
 /// few points and large ones more; more than `limit` points in all is refused.
 fn rings(path: &PathData, size: f64, limit: usize) -> Result<Vec<Vec<Point>>, String> {
-    rings_within(path, (size / 2000.0).max(0.05), limit)
+    rings_within(path, (size / 2000.0).max(0.05), 32, limit)
 }
 
-/// [`rings`], curves flattened to within `tolerance`.
-fn rings_within(path: &PathData, tolerance: f64, limit: usize) -> Result<Vec<Vec<Point>>, String> {
+/// [`rings`], curves flattened to within `tolerance`, each in at most `most` pieces.
+fn rings_within(path: &PathData, tolerance: f64, most: u32, limit: usize) -> Result<Vec<Vec<Point>>, String> {
     let mut count = 0;
     let mut out = vec![];
     for sp in &path.subpaths {
@@ -349,7 +351,7 @@ fn rings_within(path: &PathData, tolerance: f64, limit: usize) -> Result<Vec<Vec
         }
         for i in 0..segments {
             let curve = sp.segment(i);
-            let samples = if sp.segment_is_line(i) { 1 } else { pieces(curve, tolerance) };
+            let samples = if sp.segment_is_line(i) { 1 } else { pieces(curve, tolerance, most) };
             count += samples as usize;
             if count > limit {
                 return Err("The shape is too complex for a 3D effect".into());
@@ -1166,14 +1168,14 @@ struct Membrane {
     /// φ at each node; outside the shape, extrapolated (negative) from the inside, so
     /// interpolation crosses zero near the outline.
     phi: Vec<f64>,
-    /// φ over the distance to the outline at each node (its slope there); outside, the slope it
-    /// was continued at.
+    /// The slope s of φ at the outline, as each node sees it (φ ≈ s·d − d²/2 at a distance d
+    /// from the outline); outside, the slope φ was continued at.
     ratio: Vec<f64>,
     peak: f64,
 }
 
 impl Membrane {
-    fn solve(rings: &[Vec<Point>], origin: Point, step: f64, nx: usize, ny: usize) -> Self {
+    fn solve(rings: &[Vec<Point>], origin: Point, step: f64, nx: usize, ny: usize, guess: Option<&Membrane>) -> Self {
         let edges = Edges::new(rings);
         let node = |i: usize, j: usize| Point::new(origin.x + i as f64 * step, origin.y + j as f64 * step);
         let idx = |i: usize, j: usize| j * nx + i;
@@ -1228,9 +1230,12 @@ impl Membrane {
                 }
             }
         }
-        // Successive over-relaxation.
-        let mut phi = vec![0.0; nx * ny];
+        // Successive over-relaxation, at the factor that converges fastest on a grid this size.
+        // Started from a coarser solution where there is one: far fewer sweeps to settle.
+        let mut phi: Vec<f64> =
+            (0..nx * ny).map(|k| if inside[k] { guess.map_or(0.0, |g| g.at(node(k % nx, k / nx)).max(0.0)) } else { 0.0 }).collect();
         let tolerance = 1e-9 * step * step * (nx * ny) as f64;
+        let omega = 2.0 / (1.0 + (std::f64::consts::PI / nx.max(ny).max(2) as f64).sin());
         for _ in 0..2000 {
             let mut change: f64 = 0.0;
             for k in 0..nx * ny {
@@ -1242,7 +1247,7 @@ impl Membrane {
                     weight += w;
                     sum += w * n.map_or(0.0, |n| phi[n]);
                 }
-                let next = phi[k] + 1.8 * (sum / weight - phi[k]);
+                let next = phi[k] + omega * (sum / weight - phi[k]);
                 change = change.max((next - phi[k]).abs());
                 phi[k] = next;
             }
@@ -1251,14 +1256,36 @@ impl Membrane {
             }
         }
         let peak = phi.iter().copied().fold(0.0, f64::max);
-        // Outside nodes near the shape (three rings of them, for the cubic interpolation's reach):
-        // φ continued past the outline at the slope of their inner neighbours, so values
+        // Near the outline φ ≈ s·d − d²/2 at a distance d from it (∇²φ = −1 across a straight
+        // edge), s its slope at the outline. Each inside node's s; a node within a step and a
+        // quarter of the outline would divide its small error by a small distance, so its s is its
+        // neighbours'. (Not a whole step: an edge along a grid line lies a whole number of steps
+        // from the nodes, and rounding would decide which side of the line they fall.)
+        // Outside nodes near the shape (three rings of them, for the cubic interpolation's reach)
+        // get their inner neighbours' s too, and φ continued past the outline with it, so values
         // interpolated between them reach zero at the outline.
+        // Only nodes this near the outline take part (the rim band and the cubic's reach), so only
+        // their distances are found.
+        let reach = (Self::RIM + 4.0) * step;
+        let dist: Vec<f64> = (0..nx * ny)
+            .map(|k| {
+                let p = node(k % nx, k / nx);
+                if edges.near(p, reach) { edges.distance(p) } else { f64::INFINITY }
+            })
+            .collect();
         let mut ext = phi.clone();
-        let mut ratio: Vec<f64> =
-            (0..nx * ny).map(|k| if inside[k] { phi[k] / edges.distance(node(k % nx, k / nx)).max(1e-9 * step) } else { 0.0 }).collect();
-        let mut known = inside.clone();
-        for _ in 0..3 {
+        let mut ratio: Vec<f64> = (0..nx * ny)
+            .map(|k| if inside[k] && dist[k].is_finite() { (phi[k] + dist[k] * dist[k] / 2.0) / dist[k].max(1e-9 * step) } else { 0.0 })
+            .collect();
+        let mut known: Vec<bool> = (0..nx * ny).map(|k| inside[k] && dist[k] >= 1.25 * step).collect();
+        // First from the nodes farther inside; then, for a shape too thin to have any
+        // nearby, from every inside node.
+        for round in 0..8 {
+            if round == 4 {
+                for (k, i) in known.iter_mut().zip(&inside) {
+                    *k |= *i;
+                }
+            }
             let before = known.clone();
             for j in 0..ny {
                 for i in 0..nx {
@@ -1276,7 +1303,10 @@ impl Membrane {
                     }
                     if !slopes.is_empty() {
                         let slope = slopes.iter().sum::<f64>() / slopes.len() as f64;
-                        ext[k] = -edges.distance(node(i, j)) * slope;
+                        if !inside[k] {
+                            let d = dist[k];
+                            ext[k] = if d.is_finite() { -d * slope - d * d / 2.0 } else { 0.0 };
+                        }
                         ratio[k] = slope;
                         known[k] = true;
                     }
@@ -1287,11 +1317,12 @@ impl Membrane {
     }
 
     /// How many cells in from the outline φ follows the distance to it ([`Self::at_rim`]).
-    const RIM: f64 = 3.0;
+    const RIM: f64 = 1.5;
 
-    /// φ at `p`, which lies `d` from the outline. Within [`Self::RIM`] cells of it, φ is its slope times
-    /// that exact distance: the grid alone staircases along a curved outline, and the lifted
-    /// rim, steep there, would show that as ripples.
+    /// φ at `p`, which lies `d` from the outline. Within [`Self::RIM`] cells of it, φ follows that
+    /// exact distance (s·d − d²/2): the grid alone staircases along a curved outline, and the
+    /// lifted rim, steep there, would show that as ripples. Farther in, the grid is the better
+    /// guide: the slope's own small errors grow with the distance.
     fn at_rim(&self, p: Point, d: f64) -> f64 {
         let grid = self.at(p);
         let band = Self::RIM * self.step;
@@ -1301,7 +1332,7 @@ impl Membrane {
         }
         let t = (d / band).clamp(0.0, 1.0);
         let w = t * t * (3.0 - 2.0 * t);
-        self.interpolate(&self.ratio, p) * d * (1.0 - w) + grid * w
+        (self.interpolate(&self.ratio, p) * d - d * d.abs() / 2.0) * (1.0 - w) + grid * w
     }
 
     /// φ at `p`, interpolated between the four nodes around it.
@@ -1372,7 +1403,16 @@ pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) 
     let cells = if o.draft { 24 } else { 48 };
     let cell = size / cells as f64;
     let (nx, ny) = (((bounds.width() / cell).ceil() as usize).max(1), ((bounds.height() / cell).ceil() as usize).max(1));
-    let m = Membrane::solve(&rings, bounds.origin(), cell, nx + 1, ny + 1);
+    // The membrane is solved on a grid twice as fine as the facets (a draft's as coarse): its
+    // error shrinks with the square of the step, and a mirror finish shows even a slight unevenness
+    // of the surface's slope.
+    let fineness = if o.draft { 1 } else { 2 };
+    let coarse = Membrane::solve(&rings, bounds.origin(), cell, nx + 1, ny + 1, None);
+    let m = if fineness > 1 {
+        Membrane::solve(&rings, bounds.origin(), cell / fineness as f64, nx * fineness + 1, ny * fineness + 1, Some(&coarse))
+    } else {
+        coarse
+    };
     let edges = Edges::new(&rings);
     let outline = PathData::new(rings.iter().map(|r| vectorcraft_geom::SubPath::polyline(r, true)).collect());
     // A circle of radius r puffs into a half sphere of radius r at 50 % (its membrane peaks at r²/4).
@@ -1381,18 +1421,21 @@ pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) 
         if m.peak <= 0.0 || edges.near(p, 1e-9) {
             return 0.0;
         }
-        let d = if edges.near(p, Membrane::RIM * cell) { edges.distance(p) } else { f64::INFINITY };
+        let d = if edges.near(p, Membrane::RIM * m.step) { edges.distance(p) } else { f64::INFINITY };
         height * (m.at_rim(p, d).max(0.0) / m.peak).sqrt()
     };
     // The front's exact outward normal at `p` (art space, before the view turns it): the lifted
     // surface z = H·√φ has the normal (−H·∇φ, 2√φ), which turns flat to the side at the outline
     // (φ = 0). φ is continued past the outline (negative) for the slope there.
     let gain = if m.peak > 0.0 { height / m.peak.sqrt() } else { 0.0 };
-    // Distances for the normals come from the curves flattened 64 times finer: the distance to a
-    // polyline turns its direction a step at each corner, and a tight highlight shows each step.
-    // (A draft makes do with the outline as it is.)
-    let fine_rings =
-        (!o.draft).then(|| rings_within(path, (size / 2000.0).max(0.05) / 64.0, MAX_PLANE_POINTS).ok()).flatten().filter(|r| !r.is_empty());
+    // Distances for the normals come from the curves flattened 64 times finer, in as many pieces
+    // as that takes: the distance to a polyline turns its direction a step at each corner, and a
+    // tight highlight or a mirror's reflection shows each step as a streak across the rim. (A
+    // draft makes do with the outline as it is.)
+    let fine_rings = (!o.draft)
+        .then(|| rings_within(path, (size / 2000.0).max(0.05) / 64.0, FINE_PIECES, MAX_PLANE_POINTS).ok())
+        .flatten()
+        .filter(|r| !r.is_empty());
     let fine = fine_rings.as_ref().map(|r| Edges::new(r));
     let (smooth_rings, smooth_edges) = (fine_rings.as_ref().unwrap_or(&rings), fine.as_ref().unwrap_or(&edges));
     // The mesh's points lie in the shape as flattened coarsely, which is within that flattening's
@@ -1409,7 +1452,7 @@ pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) 
     };
     let slope_normal = |p: Point| -> V3 {
         // Beyond the rim band φ is the grid's alone: no distances needed.
-        let rim = smooth_edges.near(p, Membrane::RIM * cell + 2.0 * e);
+        let rim = smooth_edges.near(p, Membrane::RIM * m.step + 2.0 * e);
         let inside = !rim || smooth_edges.distance(p) > e + 2.0 * coarse;
         let signed = |q: Point| signed(q, inside, rim);
         let gx = (signed(Point::new(p.x + e, p.y)) - signed(Point::new(p.x - e, p.y))) / (2.0 * e);
