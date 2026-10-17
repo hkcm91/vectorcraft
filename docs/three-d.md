@@ -51,7 +51,7 @@ middle.
 | Volume | 0–100 %. The surface is a membrane under even pressure, held along the outline (and around holes): it rises vertically from the edge and rounds smoothly inside, without creases along the shape's middle. At 50 % a circle becomes a half sphere; 100 % puffs twice as high, 0 % is flat. |
 | Both sides | The back puffs out too; otherwise it is flat. |
 
-The surface is cut into a grid of 48 facets across the larger side, halved or quartered where it rises steeply near the outline (the cells meet without cracks), each clipped to the shape and flat shaded.
+The surface is cut into a grid of 48 facets across the larger side (24 in a draft preview), halved or quartered where it rises steeply near the outline, each cut to the shape. A cell the outline leaves and comes back into is cut into separate parts, and neighbouring cells meet at exactly the same points along their shared sides, so the surface is watertight: no cracks or slivers along its rim. (Outlines whose subpaths cross each other are cut subpath by subpath and joined by the nonzero fill rule.)
 
 ## Rotate
 

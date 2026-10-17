@@ -20,9 +20,7 @@ const MAX_DENSITY: f64 = 8.0;
 /// Samples per pixel each way.
 const SUB: usize = 2;
 /// Pixels painted round the surface, so the clipping outline never shows past its colour.
-const PAD: usize = 3;
-/// How far each face is filled past its edges, in samples.
-const GROW: f64 = 0.35;
+const PAD: usize = 2;
 /// The most colourings [`Shading::layers`] makes at once.
 pub const MAX_LAYERS: usize = 2;
 /// Ambient occlusion's samples about each pixel.
@@ -71,6 +69,8 @@ struct Piece {
     rows: (usize, usize),
     planes: [[f64; 3]; 6],
     corners: Option<Corners>,
+    /// Thinner than a sample: the values are taken along its nearest edge, not blended across it.
+    thin: bool,
 }
 
 /// A face's corners (sample space) and the normal and position at each.
@@ -79,10 +79,33 @@ type Corners = (Vec<(f64, f64)>, Vec<[f64; 6]>);
 impl Piece {
     fn at(&self, x: f64, y: f64) -> [f64; 6] {
         match &self.corners {
+            Some((pts, values)) if self.thin => along(pts, values, x, y).unwrap_or_else(|| self.planes.map(|[a, b, c]| a + b * x + c * y)),
             Some((pts, values)) => blend(pts, values, x, y).unwrap_or_else(|| self.planes.map(|[a, b, c]| a + b * x + c * y)),
             None => self.planes.map(|[a, b, c]| a + b * x + c * y),
         }
     }
+}
+
+/// The values along a sliver of a polygon at (`x`, `y`): those of the nearest point of its
+/// nearest edge, between that edge's ends. Across a sliver mean value coordinates swing wildly,
+/// and its corners' mean is one flat value: a steep rim cut into slivers would show as streaks.
+/// Along its edges a sliver's values follow its neighbours', which share them.
+fn along(pts: &[(f64, f64)], values: &[[f64; 6]], x: f64, y: f64) -> Option<[f64; 6]> {
+    let n = pts.len();
+    let mut best: Option<(f64, usize, f64)> = None;
+    for i in 0..n {
+        let (a, b) = (pts.get(i)?, pts.get((i + 1) % n)?);
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        let l2 = dx * dx + dy * dy;
+        let t = if l2 > 1e-18 { (((x - a.0) * dx + (y - a.1) * dy) / l2).clamp(0.0, 1.0) } else { 0.0 };
+        let d = (a.0 + dx * t - x).hypot(a.1 + dy * t - y);
+        if best.is_none_or(|(e, _, _)| d < e) {
+            best = Some((d, i, t));
+        }
+    }
+    let (_, i, t) = best?;
+    let (a, b) = (values.get(i)?, values.get((i + 1) % n)?);
+    Some(std::array::from_fn(|k| a[k] + (b[k] - a[k]) * t))
 }
 
 /// The values at a polygon's corners blended at (`x`, `y`) by mean value coordinates (Floater):
@@ -166,18 +189,14 @@ impl Shading {
     /// The area the faces cover: each face wound positively (its holes against it), so the
     /// nonzero fill of them all is their union. A face folded over in projection (seen nearly
     /// edge-on, a bow tie) would wind both ways and cancel its neighbours: it goes in as the
-    /// triangles about its centre, each wound positively. A face without holes has its edges
-    /// moved out by three quarters of an image pixel, which closes the cracks where
-    /// neighbouring faces don't quite meet (a steep, finely cut rim) and stays within the
-    /// colour the image paints past the surface.
+    /// triangles about its centre, each wound positively. Neighbouring faces share their
+    /// corners exactly, so the union has no cracks.
     pub fn outline(&self) -> PathData {
-        let grow = 0.75 * self.bounds().map_or(0.0, |r| Self::step(r, MAX_SIDE));
         let mut bp = BezPath::new();
-        let mut ring = |pts: &[Point], grow: f64| {
+        let mut ring = |pts: &[Point]| {
             let Some(first) = pts.first() else { return };
-            let moved = if grow > 0.0 { offset(pts, grow) } else { pts.to_vec() };
-            bp.move_to(moved.first().copied().unwrap_or(*first));
-            for p in moved.iter().skip(1) {
+            bp.move_to(*first);
+            for p in pts.iter().skip(1) {
                 bp.line_to(*p);
             }
             bp.close_path();
@@ -191,12 +210,12 @@ impl Shading {
                 let centre = c.iter().fold(Point::ZERO, |s, p| Point::new(s.x + p.x / k, s.y + p.y / k));
                 let fan = c.iter().zip(c.iter().cycle().skip(1)).take(c.len()).map(|(a, b)| area(&[centre, *a, *b]));
                 if outer.abs() > 1e-12 && fan.clone().all(|t| t * outer >= 0.0) {
-                    ring(&forward(c, outer > 0.0), grow);
+                    ring(&forward(c, outer > 0.0));
                 } else {
                     for (i, t) in fan.enumerate() {
                         let (a, b) = (c[i], c[(i + 1) % c.len()]);
                         if t.abs() > 1e-12 {
-                            ring(&forward(&[centre, a, b], t > 0.0), grow);
+                            ring(&forward(&[centre, a, b], t > 0.0));
                         }
                     }
                 }
@@ -206,7 +225,7 @@ impl Shading {
                 continue;
             }
             for c in &poly.projected {
-                ring(&forward(c, outer > 0.0), 0.0);
+                ring(&forward(c, outer > 0.0));
             }
         }
         PathData::from_bezpath(&bp)
@@ -427,8 +446,8 @@ impl Shading {
             let attrs: Vec<[f64; 6]> = poly.normals.iter().zip(&poly.positions).map(|(n, p)| [n.0, n.1, n.2, p.0, p.1, p.2]).collect();
             if poly.projected.len() == 1 {
                 // Without holes: the corners' values blended across it, the depth test on their
-                // plane. One thinner than a sample takes its corners' mean (a blend over the few
-                // samples it covers would swing wildly).
+                // plane. One thinner than a sample takes its values along its nearest edge (a blend
+                // over the few samples it covers would swing wildly).
                 let mut planes: [[f64; 3]; 6] = std::array::from_fn(|k| plane(&pts, &attrs.iter().map(|a| a[k]).collect::<Vec<_>>()));
                 let thin = signed(&pts).abs() < 0.5;
                 if thin {
@@ -437,22 +456,13 @@ impl Shading {
                         *p = [attrs.iter().map(|a| a[i]).sum::<f64>() / k, 0.0, 0.0];
                     }
                 }
-                // Filled a third of a sample larger all round, so neighbours that don't quite meet
-                // leave no pinholes for a surface behind to show through (the depth test settles
-                // the overlap; the values along a shared edge agree).
-                let k = pts.len() as f64;
-                let c = pts.iter().fold((0.0, 0.0), |s, p| (s.0 + p.0 / k, s.1 + p.1 / k));
-                let grown: Vec<(f64, f64)> = pts
-                    .iter()
-                    .map(|p| {
-                        let (dx, dy) = (p.0 - c.0, p.1 - c.1);
-                        let len = dx.hypot(dy);
-                        if len > 1e-9 { (p.0 + dx / len * GROW, p.1 + dy / len * GROW) } else { *p }
-                    })
-                    .collect();
-                let edges = grown.iter().zip(grown.iter().cycle().skip(1)).take(grown.len()).filter_map(|(a, b)| edge(*a, *b)).collect();
+                // Neighbours share their corners exactly, and an edge's crossings depend on its ends
+                // alone (taken upper end first), so a sample on a shared edge goes to exactly one
+                // of the faces: no pinholes for a surface behind to show through.
+                let edges = pts.iter().zip(pts.iter().cycle().skip(1)).take(pts.len()).filter_map(|(a, b)| edge(*a, *b)).collect();
                 if let Some(mut p) = piece(edges, planes, rows) {
-                    p.corners = (!thin).then(|| (pts.clone(), attrs.clone()));
+                    p.corners = Some((pts.clone(), attrs.clone()));
+                    p.thin = thin;
                     out.push(p);
                 }
                 continue;
@@ -592,34 +602,6 @@ fn bands<T: Send>(data: &mut [T], _: usize, f: &(dyn Fn(usize, &mut [T]) + Sync)
     f(0, data);
 }
 
-/// A positively wound ring with each edge moved `w` outwards, each corner along its bisector,
-/// the mitre limited to twice `w` so sharp corners don't shoot off (past the colour the image
-/// paints beyond the surface).
-fn offset(ring: &[Point], w: f64) -> Vec<Point> {
-    let n = ring.len();
-    let outward = |a: Point, b: Point| {
-        let (dx, dy) = (b.x - a.x, b.y - a.y);
-        let len = dx.hypot(dy);
-        // Positive winding in a y-down space: the outside is to the left of each edge.
-        if len > 1e-12 { (dy / len, -dx / len) } else { (0.0, 0.0) }
-    };
-    (0..n)
-        .map(|i| {
-            let p = ring[i];
-            let (ax, ay) = outward(ring[(i + n - 1) % n], p);
-            let (bx, by) = outward(p, ring[(i + 1) % n]);
-            let (mx, my) = (ax + bx, ay + by);
-            let ml = mx.hypot(my);
-            if ml < 1e-9 {
-                return Point::new(p.x + ax * w, p.y + ay * w);
-            }
-            let (mx, my) = (mx / ml, my / ml);
-            let cos = (mx * ax + my * ay).max(0.5);
-            Point::new(p.x + mx * w / cos, p.y + my * w / cos)
-        })
-        .collect()
-}
-
 /// An edge from `a` to `b` as the rasterizer keeps it (upper end first, with its winding), `None`
 /// for a horizontal one.
 fn edge(a: (f64, f64), b: (f64, f64)) -> Option<(f64, f64, f64, f64, i32)> {
@@ -637,7 +619,13 @@ fn piece(edges: Vec<(f64, f64, f64, f64, i32)>, planes: [[f64; 3]; 6], rows: usi
     }
     let first = (top - 0.5).ceil().max(0.0) as usize;
     let last = ((bottom - 0.5).ceil().max(0.0) as usize).min(rows);
-    (first < last && planes.iter().flatten().all(|v| v.is_finite())).then_some(Piece { edges, rows: (first, last), planes, corners: None })
+    (first < last && planes.iter().flatten().all(|v| v.is_finite())).then_some(Piece {
+        edges,
+        rows: (first, last),
+        planes,
+        corners: None,
+        thin: false,
+    })
 }
 
 #[cfg(test)]
@@ -738,15 +726,57 @@ mod tests {
         assert_eq!(pieces.len(), 2);
         let outline = s.outline();
         let b = outline.bounds().unwrap();
-        // Each face's edges moved out by three quarters of a pixel (30 pt across: 1/8 pt pixels).
-        let w = 0.75 / 8.0;
-        assert!((b.x0 + w).abs() < 1e-9 && (b.x1 - 30.0 - w).abs() < 1e-9, "{b:?}");
+        // Exactly the faces' union.
+        assert!(b.x0.abs() < 1e-9 && (b.x1 - 30.0).abs() < 1e-9, "{b:?}");
         // A face wound the other way is turned round, so the union's fill stays nonzero.
         let mut flipped = quad(1.0, 40.0, 0.0);
         flipped.projected[0].reverse();
         let s = Shading::new(rig(Material::default()), 1e6, vec![quad(5.0, 0.0, 0.0), flipped]);
         let areas: Vec<f64> = s.outline().subpaths.iter().map(|sp| signed(&sp.anchors.iter().map(|a| (a.p.x, a.p.y)).collect::<Vec<_>>())).collect();
         assert!(areas.iter().all(|a| *a > 0.0), "{areas:?}");
+    }
+
+    /// Faces that share their corners cover every sample between them: none falls through the
+    /// shared edges, however they slant.
+    #[test]
+    fn faces_sharing_edges_leave_no_pinholes() {
+        // A disc of thin wedges about an off-grid centre, each its own face.
+        let (cx, cy) = (50.3, 49.7);
+        let n = 97;
+        let at = |k: usize| {
+            let a = std::f64::consts::TAU * (k % n) as f64 / n as f64;
+            Point::new(cx + 40.0 * a.cos(), cy + 40.0 * a.sin())
+        };
+        let mut polys: Vec<Poly> = (0..n)
+            .map(|k| Poly {
+                projected: vec![vec![Point::new(cx, cy), at(k), at(k + 1)]],
+                normals: vec![V3(0.0, 0.0, 1.0); 3],
+                positions: vec![V3(0.0, 0.0, 0.0); 3],
+                normal: V3(0.0, 0.0, 1.0),
+            })
+            .collect();
+        // Behind it, a face turned from the light: a sample falling through shows darker.
+        let away = V3(0.0, 0.0, -1.0);
+        let corners = vec![Point::new(0.0, 0.0), Point::new(100.0, 0.0), Point::new(100.0, 100.0), Point::new(0.0, 100.0)];
+        polys.push(Poly { projected: vec![corners], normals: vec![away; 4], positions: vec![V3(0.0, 0.0, -10.0); 4], normal: away });
+        let s = Shading::new(rig(Material::default()), 1e6, polys);
+        let image = s.image(&grey).unwrap();
+        let w = image.width as usize;
+        let step = image.step;
+        let px = |x: usize, y: usize| image.rgba[(y * w + x) * 4];
+        let lit = px(((cx - image.origin.x) / step) as usize, ((cy - image.origin.y) / step) as usize);
+        assert!(lit > 100, "{lit}");
+        let mut inside = 0;
+        for y in 0..image.height as usize {
+            for x in 0..w {
+                let p = Point::new(image.origin.x + (x as f64 + 0.5) * step, image.origin.y + (y as f64 + 0.5) * step);
+                if (p.x - cx).hypot(p.y - cy) < 38.0 {
+                    inside += 1;
+                    assert_eq!(px(x, y), lit, "a pinhole at {p:?}");
+                }
+            }
+        }
+        assert!(inside > 1000);
     }
 
     #[test]
