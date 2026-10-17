@@ -81,6 +81,29 @@ pub enum ShadowPosition {
     Behind,
 }
 
+/// Which way the shadow is cast onto its plane.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ShadowDirection {
+    /// Along the main light: it falls away from the light, longer as the light is lower.
+    #[default]
+    Light,
+    /// Straight onto the plane, whatever the lights: the object's own footprint, a soft shadow
+    /// right under it (or right behind it), as UI icons have.
+    Straight,
+}
+
+impl ShadowDirection {
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Light => "light",
+            Self::Straight => "straight",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        [Self::Light, Self::Straight].into_iter().find(|d| d.id() == s)
+    }
+}
+
 impl ShadowPosition {
     pub fn id(self) -> &'static str {
         match self {
@@ -331,7 +354,7 @@ impl Rig {
         let mut spec = [0.0; 3];
         for (dir, intensity, color, softness) in &self.lights {
             let dir = &towards(*dir);
-            let wrap = band(((n.dot(*dir) + softness) / (1.0 + softness)).max(0.0), m.steps);
+            let wrap = ((n.dot(*dir) + softness) / (1.0 + softness)).max(0.0);
             for (ch, k) in diffuse.iter_mut().zip(color) {
                 *ch += intensity * k * wrap * lit;
             }
@@ -344,6 +367,19 @@ impl Rig {
                 for (ch, k) in spec.iter_mut().zip(color) {
                     *ch += m.specular * intensity * k * s;
                 }
+            }
+        }
+        if m.steps >= 2 {
+            // Cel bands: the light all the lights give together, cut into flat bands between the
+            // ambient light alone and full light, its colour kept. (Banding each light on its own
+            // would stack their bands' edges into a patchwork.)
+            let luma = |c: &[f64; 3]| 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
+            let floor = (luma(&m.ambient_color) * self.ambient * open).clamp(0.0, 0.99);
+            let total = luma(&diffuse);
+            if total > 1e-9 {
+                let t = ((total - floor) / (1.0 - floor)).clamp(0.0, 1.0);
+                let banded = floor + band(t, m.steps) * (1.0 - floor);
+                diffuse = diffuse.map(|c| c * banded / total);
             }
         }
         let mut tint = diffuse.map(|v| v.clamp(0.0, 1.0) * diffuse_share);
@@ -360,9 +396,10 @@ impl Rig {
             }
         }
         let mut highlight = spec.map(|s| s * (1.0 - m.metallic));
-        if m.environment != Environment::Gradient && m.specular > 0.0 && m.metallic < 1.0 {
+        if m.environment != Environment::Gradient && m.specular > 0.0 && m.metallic < 1.0 && m.steps < 2 {
             // A glossy surface mirrors its surroundings faintly, most at grazing angles (Schlick's
-            // Fresnel term for a plastic), less the rougher it is.
+            // Fresnel term for a plastic), less the rougher it is. (Not in cel bands: it would
+            // only add patches.)
             let fresnel = 0.04 + 0.96 * (1.0 - nv.clamp(0.0, 1.0)).powi(5);
             let share = m.specular * (1.0 - m.metallic) * (1.0 - m.roughness).powi(2) * (0.08 + 0.6 * fresnel);
             for (h, e) in highlight.iter_mut().zip(mirrored()) {
@@ -394,12 +431,20 @@ fn shadow_plane(position: ShadowPosition) -> Option<V3> {
     }
 }
 
-/// The shadow `faces` (each a face's view-space contours) cast along the light towards `light`
-/// on the plane at `position`, `distance` beyond the object, projected by `project`: one outline
-/// whose nonzero fill is the shadow. None when there is no shadow plane or the light grazes it or
-/// lies beyond it.
-pub(crate) fn cast(faces: &[Vec<Vec<V3>>], light: V3, position: ShadowPosition, distance: f64, project: impl Fn(V3) -> Point) -> Option<PathData> {
+/// The shadow `faces` (each a face's view-space contours) cast along the light towards `light` (or
+/// straight, as `direction` says) on the plane at `position`, `distance` beyond the object,
+/// projected by `project`: one outline whose nonzero fill is the shadow. None when there is no
+/// shadow plane or the light grazes it or lies beyond it.
+pub(crate) fn cast(
+    faces: &[Vec<Vec<V3>>],
+    light: V3,
+    direction: ShadowDirection,
+    position: ShadowPosition,
+    distance: f64,
+    project: impl Fn(V3) -> Point,
+) -> Option<PathData> {
     let n = shadow_plane(position)?;
+    let light = if direction == ShadowDirection::Straight { n } else { light };
     let along = light.dot(n);
     if along < 0.05 || faces.is_empty() {
         return None;
@@ -610,6 +655,24 @@ mod tests {
         let mut seen: Vec<f64> = (0..=40).map(|i| rig.shade(V3(f64::from(i) / 40.0, 0.0, 1.0).unit()).tint[0]).collect();
         seen.dedup();
         assert!(seen.len() <= 3, "{seen:?}");
+        // With several lights the bands are still that many: the light they give together is
+        // banded, not each light on its own (their bands' edges would stack into a patchwork).
+        let fill = Light { azimuth: 70.0, elevation: 20.0, intensity: 0.5, ..Light::default() };
+        let back = Light { azimuth: 160.0, elevation: 35.0, intensity: 0.6, ..Light::default() };
+        let rig = Rig::new(main, &[fill, back], 0.2, cel, true);
+        let mut tones: Vec<i64> = vec![];
+        for i in -20..=20 {
+            for j in -20..=20 {
+                let (x, y) = (f64::from(i) / 20.0, f64::from(j) / 20.0);
+                if x * x + y * y < 1.0 {
+                    let t = rig.shade(V3(x, y, (1.0 - x * x - y * y).sqrt())).tint;
+                    tones.push((1e6 * (t[0] + t[1] + t[2])).round() as i64);
+                }
+            }
+        }
+        tones.sort_unstable();
+        tones.dedup();
+        assert!(tones.len() <= 3, "{} tones", tones.len());
         assert_eq!(Material { steps: 1, ..cel }.sanitized().steps, 0);
         assert_eq!(Material { steps: 99, ..cel }.sanitized().steps, MAX_SHADING_STEPS);
     }
@@ -619,18 +682,29 @@ mod tests {
         // A unit square facing the viewer, 10 above the origin.
         let square = vec![vec![V3(-1.0, -11.0, 0.0), V3(1.0, -11.0, 0.0), V3(1.0, -9.0, 0.0), V3(-1.0, -9.0, 0.0)]];
         let flat = |v: V3| Point::new(v.0, v.1);
+        let along = ShadowDirection::Light;
         let above = direction(0.0, 60.0);
-        let below = cast(std::slice::from_ref(&square), above, ShadowPosition::Below, 5.0, flat).unwrap();
+        let below = cast(std::slice::from_ref(&square), above, along, ShadowPosition::Below, 5.0, flat).unwrap();
         let b = below.bounds().unwrap();
         assert!(b.y0 > -9.0, "the shadow is under the square: {b:?}");
         assert!(
-            cast(std::slice::from_ref(&square), direction(0.0, -30.0), ShadowPosition::Below, 0.0, flat).is_none(),
+            cast(std::slice::from_ref(&square), direction(0.0, -30.0), along, ShadowPosition::Below, 0.0, flat).is_none(),
             "a light from below casts none down"
         );
-        let behind = cast(std::slice::from_ref(&square), direction(30.0, 30.0), ShadowPosition::Behind, 10.0, flat).unwrap();
+        let behind = cast(std::slice::from_ref(&square), direction(30.0, 30.0), along, ShadowPosition::Behind, 10.0, flat).unwrap();
         let b = behind.bounds().unwrap();
         assert!(b.x0 < -1.0 && b.y0 > -11.0, "pushed away from a light at the upper right: {b:?}");
-        assert!(cast(&[square], direction(0.0, 0.0), ShadowPosition::None, 0.0, flat).is_none());
+        assert!(cast(std::slice::from_ref(&square), direction(0.0, 0.0), along, ShadowPosition::None, 0.0, flat).is_none());
+        // Cast straight, the shadow ignores the light: right under the square, as wide as it, even
+        // with the light below; and straight behind it, exactly where it is.
+        let straight = ShadowDirection::Straight;
+        let b = cast(std::slice::from_ref(&square), direction(70.0, -30.0), straight, ShadowPosition::Below, 5.0, flat).unwrap().bounds().unwrap();
+        assert!(b.y0 > -9.0 && (b.x0 + 1.0).abs() < 1e-9 && (b.x1 - 1.0).abs() < 1e-9, "{b:?}");
+        let b = cast(&[square], direction(30.0, 30.0), straight, ShadowPosition::Behind, 10.0, flat).unwrap().bounds().unwrap();
+        assert!((b.x0 + 1.0).abs() < 1e-9 && (b.y0 + 11.0).abs() < 1e-9 && (b.x1 - 1.0).abs() < 1e-9 && (b.y1 + 9.0).abs() < 1e-9, "{b:?}");
+        assert_eq!(ShadowDirection::parse("straight"), Some(straight));
+        assert_eq!(ShadowDirection::parse("light"), Some(along));
+        assert_eq!(ShadowDirection::parse("down"), None);
     }
 
     #[test]

@@ -276,6 +276,8 @@ fn lighting_tab_adds_lights_and_a_shadow_to_the_live_effect() {
     h.app.ui.dialog.as_mut().unwrap().fields.insert("shadow".into(), json!("below"));
     h.settle();
     h.rect("Distance");
+    // New shadows fall straight under the object, the choice shown beside Direction.
+    h.rect("Straight");
     // More Lights opens on a click; Add Light adds one, shown as Light Source 2.
     h.click(h.rect("More Lights").center());
     h.click(h.rect("Add Light").center());
@@ -301,9 +303,7 @@ fn material_tab_presets_set_the_material_and_lighting_presets_the_lights() {
     // The defaults are the Matte preset, shown by name.
     h.rect("Matte");
     let d = h.app.ui.dialog.as_mut().unwrap();
-    for (k, v) in vectorcraft_effects::MATERIAL_PRESETS[4].1 {
-        d.fields.insert((*k).into(), json!(v));
-    }
+    d.fields.extend(vectorcraft_effects::MATERIAL_PRESETS[4].params());
     h.settle();
     h.rect("Metal");
     h.app.ui.dialog.as_mut().unwrap().fields.insert("roughness".into(), json!(12.5));

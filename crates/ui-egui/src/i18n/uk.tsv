@@ -4362,6 +4362,8 @@ lighting	Light	Світло
 	Sunset	Захід сонця
 	Ambient Occlusion	Фонове затінення
 	Contact Shadow	Контактна тінь
+	Straight	Прямо
+	From Light	Від світла
 	Smooth shading	Плавне затінення
 	Ambient Color	Колір розсіяного світла
 	Soft Touch	Софт-тач

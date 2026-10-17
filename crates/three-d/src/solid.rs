@@ -11,7 +11,7 @@
 
 use vectorcraft_geom::{BezPath, ParamCurve, PathData, Point, Rect};
 
-use crate::lighting::{self, Light, MAX_EXTRA_LIGHTS, Material, Shade, ShadowPosition};
+use crate::lighting::{self, Light, MAX_EXTRA_LIGHTS, Material, Shade, ShadowDirection, ShadowPosition};
 use crate::raster::{Poly, Shading};
 use crate::smooth::{self, Source};
 use crate::{MAX_FACES, Revolve, V3, mean};
@@ -35,9 +35,10 @@ pub struct View {
     /// More lights: the first `extra_count` of `extra_lights`.
     pub extra_lights: [Light; MAX_EXTRA_LIGHTS],
     pub extra_count: usize,
-    /// Where the object casts its shadow, and how far beyond it (points).
+    /// Where the object casts its shadow, how far beyond it (points) and which way.
     pub shadow: ShadowPosition,
     pub shadow_distance: f64,
+    pub shadow_direction: ShadowDirection,
     /// How the surface takes the light.
     pub material: Material,
 }
@@ -61,6 +62,7 @@ impl Default for View {
             extra_count: r.extra_count,
             shadow: r.shadow,
             shadow_distance: r.shadow_distance,
+            shadow_direction: r.shadow_direction,
             material: r.material,
         }
     }
@@ -85,6 +87,7 @@ impl View {
             extra_count: self.extra_count,
             shadow: self.shadow,
             shadow_distance: self.shadow_distance,
+            shadow_direction: self.shadow_direction,
             material: self.material,
             ..Revolve::default()
         }
@@ -595,7 +598,8 @@ impl Builder<'_> {
             }
         }
         self.facets.sort_by(|a, b| a.depth.total_cmp(&b.depth));
-        let shadow = lighting::cast(&self.casters, camera.light, camera.view.shadow, camera.view.shadow_distance, |v| camera.project(v));
+        let view = &camera.view;
+        let shadow = lighting::cast(&self.casters, camera.light, view.shadow_direction, view.shadow, view.shadow_distance, |v| camera.project(v));
         let contact = lighting::contact(&self.casters, camera.view.shadow, camera.view.shadow_distance, |v| camera.project(v));
         Shaded { facets: self.facets, shadow, shading, contact }
     }
@@ -1595,7 +1599,9 @@ pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) 
                     let front: Vec<Vec<V3>> =
                         pieces.iter().zip(&lifts).map(|(p, h)| p.iter().zip(h).map(|(q, h)| camera.place(*q, half + h)).collect()).collect();
                     let n = newell(&front);
-                    let given = camera.rig.smooth().then(|| pieces.iter().flatten().map(|q| camera.rotate(slope_normal(*q))).collect());
+                    // The surface's exact normals (art space), for smooth shading.
+                    let slopes: Option<Vec<V3>> = camera.rig.smooth().then(|| pieces.iter().flatten().map(|q| slope_normal(*q)).collect());
+                    let given = slopes.as_ref().map(|s| s.iter().map(|m| camera.rotate(*m)).collect());
                     b.face_with(front, n, given)?;
                     if o.both_sides && o.cap {
                         // The back winds the same way round as the front, so its outward normal is
@@ -1606,7 +1612,15 @@ pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) 
                             .map(|(p, h)| p.iter().zip(h).map(|(q, h)| camera.place(back_turn.apply(*q), -half - h * back_turn.scale)).collect())
                             .collect();
                         let n = newell(&back);
-                        b.face(back, V3(-n.0, -n.1, -n.2))?;
+                        // Its exact normals too: the front's mirrored front to back, turned with
+                        // it (a taper scales it evenly, which leaves them be). Averaged ones would
+                        // differ from the front's where the two meet at the rim, and the depth test
+                        // switching between them there shows as a comb.
+                        let (sin, cos) = (back_turn.sin, back_turn.cos);
+                        let given = slopes
+                            .as_ref()
+                            .map(|s| s.iter().map(|m| camera.rotate(V3(m.0 * cos - m.1 * sin, m.0 * sin + m.1 * cos, -m.2))).collect());
+                        b.face_with(back, V3(-n.0, -n.1, -n.2), given)?;
                     }
                 }
             }

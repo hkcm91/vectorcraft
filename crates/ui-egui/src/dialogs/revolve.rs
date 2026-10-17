@@ -316,12 +316,12 @@ fn material_controls(ui: &mut egui::Ui, d: &mut Dialog) {
     let id = d.str("__effect");
     let defaults = vectorcraft_effects::default_params(&id).unwrap_or(Value::Null);
     let value = |d: &Dialog, k: &str| d.f64(k, defaults.get(k).and_then(Value::as_f64).unwrap_or(0.0));
-    let current = vectorcraft_effects::MATERIAL_PRESETS.iter().position(|(_, p)| p.iter().all(|(k, v)| (value(d, k) - v).abs() < 0.005));
+    let current = vectorcraft_effects::MATERIAL_PRESETS.iter().position(|p| p.matches(&d.fields, &defaults));
     heading(ui, tl!("Material"));
     if let Some(k) = presets(ui, "material", &material_preset_names(), current)
-        && let Some((_, p)) = vectorcraft_effects::MATERIAL_PRESETS.get(k)
+        && let Some(p) = vectorcraft_effects::MATERIAL_PRESETS.get(k)
     {
-        d.fields.extend(p.iter().map(|(k, v)| ((*k).to_string(), json!(v))));
+        d.fields.extend(p.params());
     }
     number(ui, d, "specular", tl!("Highlight"), (0.0, 100.0), "%", 1, None);
     ui.add_enabled_ui(value(d, "specular") > 0.0, |ui| {
@@ -389,6 +389,9 @@ fn lighting_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
         choice(ui, d, "shadow", tl!("Position"), &positions);
         let on = d.fields.get("shadow").and_then(Value::as_str).is_some_and(|s| s != "none");
         ui.add_enabled_ui(on, |ui| {
+            // Straight down onto the ground (or straight back onto the wall), or along the light.
+            let directions = [(json!("straight"), tl!("Straight")), (json!("light"), tl!("From Light"))];
+            choice(ui, d, "shadowDirection", tl!("Direction"), &directions);
             number(ui, d, "shadowDistance", tl!("Distance"), (0.0, 100000.0), "", 1, Some(unit));
             number(ui, d, "shadowOpacity", tl!("Opacity"), (0.0, 100.0), "%", 1, None);
             number(ui, d, "shadowSoftness", tl!("Softness"), (0.0, 100.0), "%", 1, None);

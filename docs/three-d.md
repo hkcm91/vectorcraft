@@ -77,11 +77,14 @@ light's share (`intensity × colour × (n·l + s) / (1 + s)`, where `s` is the s
 multiplied into the object's colour. With smooth shading, gradients and patterns are multiplied by the shading
 pixel by pixel (its highlight screened over them); without it they are darkened by each face's brightness only.
 
-**Shadows** casts the solid's shadow with the main light: **Below Object** on a ground under it (tilted 20°
-towards the viewer, so it shows in a front view), or **Behind Object** on a wall behind it, **Distance** further
-away. Its **Opacity** and **Softness** (a Gaussian blur, relative to the object's size) set how dark and how
-diffuse it is. There is no shadow when the light is below the ground or behind the wall. The shadow is drawn first,
-under the faces, in the same group. The model and the defaults are our own.
+**Shadows** casts the solid's shadow: **Below Object** on a ground under it (tilted 20° towards the viewer, so it
+shows in a front view), or **Behind Object** on a wall behind it, **Distance** further away. Its **Direction** is
+**Straight** (new effects): the solid dropped straight onto the plane, whatever the lights, a soft footprint right
+under it (or right behind it) as UI icon sets use; or **From Light**: cast along the main light, falling away
+from it and longer as the light is lower (effects saved before the choice existed). Its **Opacity** and
+**Softness** (a Gaussian blur, relative to the object's size) set how dark and how diffuse it is. Cast from the
+light, there is no shadow when the light is below the ground or behind the wall. The shadow is drawn first, under
+the faces, in the same group. The model and the defaults are our own.
 
 **Contact Shadow** (0–100 %, 60 % for new effects) adds a dark, tight shadow where the object meets that plane:
 the parts of the solid within 8 % of its size of the plane, dropped straight onto it, filled black at up to 85 %
@@ -114,7 +117,8 @@ The **Material** tab sets how the surface takes the light, for the clean 3D icon
 - **Rim Light** brightens the silhouette, where the surface turns away from the viewer (`(1 − n·v)³`), in its
   **Color**.
 - **Cel Bands** (2–8) shades in that many flat bands with hard edges and a hard highlight, cel style; 0 is
-  continuous.
+  continuous. The light all the lights give together is banded, from the ambient light alone to full light, so
+  more lights don't stack their bands' edges; a banded surface takes no glossy sheen.
 - **Smooth shading** (on for new effects) shades the surface pixel by pixel: curved surfaces shade smoothly,
   flat faces take a gentle falloff, and highlights and cel band edges are as smooth as the pixels whatever the
   size of the faces. Each vertex has a normal: for Inflate the exact normal of its height field, elsewhere the
@@ -140,7 +144,9 @@ the crisp vector outline throughout. The last few 3D arts are remembered by thei
 an object and finding its bounds shade it once.
 
 **Presets**: **Matte** (the defaults), **Soft Touch**, **Plastic**, **Glossy**, **Metal**, **Chrome**, **Rim Glow**
-and **Toon**, shown by name while the material matches. All values are our own.
+and **Toon**, shown by name while the material matches. Each also sets **Reflections**: **Metal** reflects the
+plain **Gradient**, which keeps it bright however it is turned, **Chrome** and the rest the **Studio**. **Toon** is
+three bands with a small, hard highlight. All values are our own.
 
 ## Parameters (`effect.apply`, `effect.setParams`)
 
@@ -150,11 +156,12 @@ and **Toon**, shown by name while the material matches. All values are our own.
 uses: `rotationX`, `rotationY`, `rotationZ`, `perspective` (%), `shade`, `lightAzimuth`, `lightElevation`,
 `lightIntensity` (%), `ambient` (%), and the lighting and shadow parameters every 3D effect takes: `lightColor`
 (`#rrggbb`), `lightSoftness` (%), `lights` (up to three `{azimuth, elevation, intensity, color, softness}`),
-`shadow` (`none`, `below`, `behind`), `shadowDistance`, `shadowOpacity` (%) and `shadowSoftness` (%), and the
+`shadow` (`none`, `below`, `behind`), `shadowDirection` (`straight`, `light`; absent: `light`), `shadowDistance`,
+`shadowOpacity` (%) and `shadowSoftness` (%), and the
 material: `specular`, `roughness`, `metallic`, `rimLight` (%), `rimColor`, `shadingSteps` (0–8), `ambientColor`
 and `smoothShading` (absent: off), `ambientOcclusion` (%, absent: 0), `environment` (`gradient`, `studio`,
 `outdoor`, `sunset`, `dark`; absent: `gradient`) and `contactShadow` (%, absent: 0). New effects store each
-option on (smooth shading, 60 % occlusion, a 60 % contact shadow and the studio); an effect saved before an
+option on (smooth shading, 60 % occlusion, a 60 % contact shadow, the studio and a straight shadow); an effect saved before an
 option existed draws without it, as it did then. `draftPreview` (true) asks for the quick draft the dialog
 shows while a value is dragged. Lengths are points and scale with the object (Scale Strokes &
 Effects).

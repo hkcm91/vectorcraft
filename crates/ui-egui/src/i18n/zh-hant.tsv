@@ -3751,6 +3751,8 @@ lighting	Light	光源
 	Sunset	日落
 	Ambient Occlusion	環境光遮蔽
 	Contact Shadow	接觸陰影
+	Straight	垂直
+	From Light	來自光源
 	Smooth shading	平滑著色
 	Ambient Color	環境光顏色
 	Soft Touch	柔觸

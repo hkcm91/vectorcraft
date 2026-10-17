@@ -11,7 +11,7 @@ mod raster;
 mod smooth;
 mod solid;
 mod visibility;
-pub use lighting::{Environment, Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, Material, Shade, ShadowPosition};
+pub use lighting::{Environment, Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, Material, Shade, ShadowDirection, ShadowPosition};
 pub use raster::{DRAFT_SIDE, MAX_SIDE, ShadedImage, Shading};
 pub use solid::{Bevel, BevelShape, Extrude, Facet, Inflate, Shaded, View, extrude, extrude_lit, inflate, inflate_lit, plane, plane_lit};
 pub use visibility::{VisibleFace, visible_faces};
@@ -73,9 +73,10 @@ pub struct Revolve {
     /// More lights: the first `extra_count` of `extra_lights`.
     pub extra_lights: [Light; MAX_EXTRA_LIGHTS],
     pub extra_count: usize,
-    /// Where the object casts its shadow, and how far beyond it (points).
+    /// Where the object casts its shadow, how far beyond it (points) and which way.
     pub shadow: ShadowPosition,
     pub shadow_distance: f64,
+    pub shadow_direction: ShadowDirection,
     /// How the surface takes the light.
     pub material: Material,
 }
@@ -102,6 +103,7 @@ impl Default for Revolve {
             extra_count: 0,
             shadow: ShadowPosition::None,
             shadow_distance: 0.0,
+            shadow_direction: ShadowDirection::Light,
             material: Material::default(),
         }
     }
@@ -420,7 +422,7 @@ pub fn revolve_lit(path: &PathData, bounds: Rect, options: Revolve) -> Result<Re
         }
     }
     faces.sort_by(|a, b| a.depth.total_cmp(&b.depth));
-    let shadow = lighting::cast(&casters, light, o.shadow, o.shadow_distance, project);
+    let shadow = lighting::cast(&casters, light, o.shadow_direction, o.shadow, o.shadow_distance, project);
     let contact = lighting::contact(&casters, o.shadow, o.shadow_distance, project);
     Ok(Revolved { faces, shadow, shading, contact })
 }

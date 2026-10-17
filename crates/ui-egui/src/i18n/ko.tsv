@@ -4346,6 +4346,8 @@ lighting	Light	광원
 	Sunset	노을
 	Ambient Occlusion	앰비언트 오클루전
 	Contact Shadow	접지 그림자
+	Straight	수직
+	From Light	광원에서
 	Smooth shading	부드러운 음영
 	Ambient Color	주변광 색상
 	Soft Touch	소프트 터치

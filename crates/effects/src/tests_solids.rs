@@ -254,6 +254,29 @@ fn a_shadow_is_a_blurred_black_shape_behind_the_faces() {
     assert!(art.children().unwrap()[0].path_data().is_none(), "no shadow unless asked");
 }
 
+/// New effects drop their shadow straight under the object; one saved before the choice existed
+/// still casts it along the main light, as it did then.
+#[test]
+fn a_new_shadow_falls_straight_under_the_object_and_an_old_one_along_the_light() {
+    let front = json!({"shadow": "below", "rotationX": 0, "rotationY": 0, "rotationZ": 0, "lightAzimuth": -45, "lightElevation": 45});
+    let centre = |e: Effect| {
+        let mut n = square_node();
+        n.appearance.effects.push(e);
+        let art = solid_art(&n).unwrap();
+        let b = art.children().unwrap()[0].path_data().unwrap().bounds().unwrap();
+        b.center().x
+    };
+    let new = fx(INFLATE, front.clone());
+    assert_eq!(new.params["shadowDirection"], json!("straight"));
+    assert!((centre(new) - 150.0).abs() < 1.0, "right under the square's centre");
+    let old = Effect { id: INFLATE.into(), params: front.clone(), visible: true };
+    assert!(centre(old) - 150.0 > 5.0, "pushed away from a light at the upper left");
+    let mut along = front;
+    along["shadowDirection"] = json!("light");
+    assert!(centre(fx(INFLATE, along)) - 150.0 > 5.0);
+    assert!(validate_solid(&square_node(), INFLATE, &json!({"shadowDirection": "down"})).is_err());
+}
+
 #[test]
 fn bad_lighting_params_are_refused() {
     let n = square_node();
@@ -415,10 +438,18 @@ fn a_glossy_highlight_lifts_a_face_above_its_paint_and_matte_never_does() {
 #[test]
 fn every_preset_validates_and_bad_material_params_are_refused() {
     let n = square_node();
-    for (name, p) in crate::MATERIAL_PRESETS {
-        let params: serde_json::Map<String, Value> = p.iter().map(|(k, v)| ((*k).to_string(), json!(v))).collect();
-        assert!(validate_solid(&n, EXTRUDE, &Value::Object(params)).is_ok(), "{name}");
+    let defaults = crate::default_params(EXTRUDE).unwrap();
+    for preset in crate::MATERIAL_PRESETS {
+        assert!(validate_solid(&n, EXTRUDE, &Value::Object(preset.params())).is_ok(), "{}", preset.id);
+        assert!(preset.matches(&preset.params(), &defaults), "{}", preset.id);
     }
+    // The defaults are Matte; Metal is told from Chrome, and from a metal reflecting the studio.
+    let [matte, metal, chrome] = [0, 4, 5].map(|i| &crate::MATERIAL_PRESETS[i]);
+    assert!(matte.matches(&serde_json::Map::new(), &defaults));
+    assert!(!chrome.matches(&metal.params(), &defaults));
+    let mut studio_metal = metal.params();
+    studio_metal.insert("environment".into(), json!("studio"));
+    assert!(!metal.matches(&studio_metal, &defaults));
     for preset in crate::LIGHTING_PRESETS {
         assert!(validate_solid(&n, INFLATE, &Value::Object(preset.params())).is_ok(), "{}", preset.id);
     }

@@ -3,7 +3,8 @@
 //! Params (besides the main light's `lightAzimuth`, `lightElevation`, `lightIntensity`, `ambient`
 //! and `shade`): `lightColor` ("#rrggbb"), `lightSoftness` (%), `lights` (up to three more:
 //! `[{azimuth, elevation, intensity %, color, softness %}]`), `shadow` (none|below|behind),
-//! `shadowDistance` (pt), `shadowOpacity` (%) and `shadowSoftness` (%); and the material:
+//! `shadowDirection` (light|straight), `shadowDistance` (pt), `shadowOpacity` (%) and
+//! `shadowSoftness` (%); and the material:
 //! `specular`, `roughness`, `metallic`, `rimLight` (%), `rimColor`, `shadingSteps` (0 or 2–8),
 //! `ambientColor`, `environment` (what metal and gloss reflect) and `ambientOcclusion` (%); and
 //! `smoothShading` and `contactShadow` (%). Options added later read as off for effects saved
@@ -15,7 +16,9 @@ use std::sync::Arc;
 use vectorcraft_doc::color::{BlendMode, Color, Paint};
 use vectorcraft_doc::{Appearance, AppearanceItem, Effect, FillLayer, ImageObject, Node, NodeId, NodeKind};
 use vectorcraft_geom::{Affine, PathData};
-use vectorcraft_three_d::{DRAFT_SIDE, Environment, Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, MAX_SIDE, Material, Shade, Shading, ShadowPosition};
+use vectorcraft_three_d::{
+    DRAFT_SIDE, Environment, Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, MAX_SIDE, Material, Shade, Shading, ShadowDirection, ShadowPosition,
+};
 
 use crate::util::{flag, num, text};
 
@@ -27,6 +30,7 @@ pub struct Lighting {
     pub extra_count: usize,
     pub shadow: ShadowPosition,
     pub shadow_distance: f64,
+    pub shadow_direction: ShadowDirection,
     pub material: Material,
 }
 
@@ -49,6 +53,7 @@ impl Lighting {
             extra_count: self.extra_count,
             shadow: self.shadow,
             shadow_distance: self.shadow_distance,
+            shadow_direction: self.shadow_direction,
             material: self.material,
             ..Default::default()
         }
@@ -62,6 +67,7 @@ impl Lighting {
             extra_count: self.extra_count,
             shadow: self.shadow,
             shadow_distance: self.shadow_distance,
+            shadow_direction: self.shadow_direction,
             material: self.material,
             ..Default::default()
         }
@@ -90,6 +96,7 @@ pub fn lighting(p: &Value) -> Lighting {
         extra_count,
         shadow: ShadowPosition::parse(text(p, "shadow", "none")).unwrap_or_default(),
         shadow_distance: num(p, "shadowDistance", 0.0),
+        shadow_direction: ShadowDirection::parse(text(p, "shadowDirection", "light")).unwrap_or_default(),
         material: Material {
             specular: num(p, "specular", 0.0) / 100.0,
             roughness: num(p, "roughness", 50.0) / 100.0,
@@ -107,8 +114,14 @@ pub fn lighting(p: &Value) -> Lighting {
 
 /// What a 3D effect saved before an option existed draws without it: the look it had then. New
 /// effects store each option (their defaults turn it on).
-fn legacy() -> [(&'static str, Value); 4] {
-    [("smoothShading", json!(false)), ("ambientOcclusion", json!(0.0)), ("contactShadow", json!(0.0)), ("environment", json!("gradient"))]
+fn legacy() -> [(&'static str, Value); 5] {
+    [
+        ("smoothShading", json!(false)),
+        ("ambientOcclusion", json!(0.0)),
+        ("contactShadow", json!(0.0)),
+        ("environment", json!("gradient")),
+        ("shadowDirection", json!("light")),
+    ]
 }
 
 /// A 3D effect's params for drawing: `raw` (as saved) over the effect's defaults, except that an
@@ -125,17 +138,72 @@ pub fn drawing_params(id: &str, raw: &Value) -> Value {
     p
 }
 
-/// Material presets for UI work: (id, the params they set). Our own values. The dialog shows a
-/// preset's name while every one of its params matches.
-pub const MATERIAL_PRESETS: &[(&str, &[(&str, f64)])] = &[
-    ("matte", &[("specular", 0.0), ("roughness", 50.0), ("metallic", 0.0), ("rimLight", 0.0), ("shadingSteps", 0.0)]),
-    ("softTouch", &[("specular", 25.0), ("roughness", 70.0), ("metallic", 0.0), ("rimLight", 0.0), ("shadingSteps", 0.0)]),
-    ("plastic", &[("specular", 55.0), ("roughness", 40.0), ("metallic", 0.0), ("rimLight", 0.0), ("shadingSteps", 0.0)]),
-    ("glossy", &[("specular", 90.0), ("roughness", 20.0), ("metallic", 0.0), ("rimLight", 0.0), ("shadingSteps", 0.0)]),
-    ("metal", &[("specular", 100.0), ("roughness", 35.0), ("metallic", 100.0), ("rimLight", 0.0), ("shadingSteps", 0.0)]),
-    ("chrome", &[("specular", 100.0), ("roughness", 12.0), ("metallic", 100.0), ("rimLight", 0.0), ("shadingSteps", 0.0)]),
-    ("rimGlow", &[("specular", 40.0), ("roughness", 35.0), ("metallic", 0.0), ("rimLight", 55.0), ("shadingSteps", 0.0)]),
-    ("toon", &[("specular", 60.0), ("roughness", 30.0), ("metallic", 0.0), ("rimLight", 0.0), ("shadingSteps", 3.0)]),
+/// A material preset: the numbers it sets and what it reflects.
+pub struct MaterialPreset {
+    pub id: &'static str,
+    pub values: &'static [(&'static str, f64)],
+    pub environment: &'static str,
+}
+
+impl MaterialPreset {
+    /// The params this preset sets.
+    pub fn params(&self) -> serde_json::Map<String, Value> {
+        let mut m: serde_json::Map<String, Value> = self.values.iter().map(|(k, v)| ((*k).to_string(), json!(v))).collect();
+        m.insert("environment".into(), json!(self.environment));
+        m
+    }
+
+    /// Do `params` (over `defaults`) hold this preset's material?
+    pub fn matches(&self, params: &serde_json::Map<String, Value>, defaults: &Value) -> bool {
+        self.params().iter().all(|(k, v)| params.get(k).or_else(|| defaults.get(k)).is_some_and(|have| same(have, v)))
+    }
+}
+
+/// Material presets for UI work. Our own values. The dialog shows a preset's name while every
+/// one of its params matches. Metal reflects the plain gradient, which keeps it bright turned any
+/// way (the studio's grey walls left a turned coin a dull olive); Chrome keeps the studio's crisp
+/// horizon. Toon bands the light in three tones, with one small, hard highlight per light.
+pub const MATERIAL_PRESETS: &[MaterialPreset] = &[
+    MaterialPreset {
+        id: "matte",
+        values: &[("specular", 0.0), ("roughness", 50.0), ("metallic", 0.0), ("rimLight", 0.0), ("shadingSteps", 0.0)],
+        environment: "studio",
+    },
+    MaterialPreset {
+        id: "softTouch",
+        values: &[("specular", 25.0), ("roughness", 70.0), ("metallic", 0.0), ("rimLight", 0.0), ("shadingSteps", 0.0)],
+        environment: "studio",
+    },
+    MaterialPreset {
+        id: "plastic",
+        values: &[("specular", 55.0), ("roughness", 40.0), ("metallic", 0.0), ("rimLight", 0.0), ("shadingSteps", 0.0)],
+        environment: "studio",
+    },
+    MaterialPreset {
+        id: "glossy",
+        values: &[("specular", 90.0), ("roughness", 20.0), ("metallic", 0.0), ("rimLight", 0.0), ("shadingSteps", 0.0)],
+        environment: "studio",
+    },
+    MaterialPreset {
+        id: "metal",
+        values: &[("specular", 100.0), ("roughness", 35.0), ("metallic", 100.0), ("rimLight", 0.0), ("shadingSteps", 0.0)],
+        environment: "gradient",
+    },
+    MaterialPreset {
+        id: "chrome",
+        values: &[("specular", 100.0), ("roughness", 12.0), ("metallic", 100.0), ("rimLight", 0.0), ("shadingSteps", 0.0)],
+        environment: "studio",
+    },
+    MaterialPreset {
+        id: "rimGlow",
+        values: &[("specular", 40.0), ("roughness", 35.0), ("metallic", 0.0), ("rimLight", 55.0), ("shadingSteps", 0.0)],
+        environment: "studio",
+    },
+    MaterialPreset {
+        id: "toon",
+        values: &[("specular", 70.0), ("roughness", 20.0), ("metallic", 0.0), ("rimLight", 0.0), ("shadingSteps", 3.0)],
+        environment: "studio",
+    },
 ];
 
 /// One light of a lighting preset: azimuth, elevation (degrees), intensity (%), colour, softness (%).
@@ -228,6 +296,11 @@ pub fn validate(p: &Value) -> Result<(), String> {
         && !s.as_str().is_some_and(|s| ShadowPosition::parse(s).is_some())
     {
         return Err("shadow must be none, below or behind".into());
+    }
+    if let Some(s) = p.get("shadowDirection")
+        && !s.as_str().is_some_and(|s| ShadowDirection::parse(s).is_some())
+    {
+        return Err("shadowDirection must be light or straight".into());
     }
     let colour = |v: Option<&Value>, what: &str| match v {
         None => Ok(()),
