@@ -957,6 +957,202 @@ fn clip(ring: &[Point], cell: Rect) -> Vec<Point> {
     if pts.len() >= 3 && signed_area(&pts).abs() > 1e-12 { pts } else { vec![] }
 }
 
+/// Do any two edges of `rings` cross, touch or overlap, other than neighbours meeting at their
+/// shared corner? Rings that don't outline a shape [`cut_cell`] can follow exactly.
+fn rings_cross(rings: &[Vec<Point>], edges: &Edges) -> bool {
+    let orient = |a: Point, b: Point, c: Point| (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    // Is `p`, on the line through `a` and `b`, within the segment?
+    let within = |a: Point, b: Point, p: Point| p.x >= a.x.min(b.x) && p.x <= a.x.max(b.x) && p.y >= a.y.min(b.y) && p.y <= a.y.max(b.y);
+    let meet = |a: Point, b: Point, c: Point, d: Point| -> bool {
+        let shared = [(a, c), (a, d), (b, c), (b, d)].iter().filter(|(p, q)| p == q).count();
+        match shared {
+            0 => {
+                let (o1, o2, o3, o4) = (orient(a, b, c), orient(a, b, d), orient(c, d, a), orient(c, d, b));
+                (o1 * o2 < 0.0 && o3 * o4 < 0.0)
+                    || (o1 == 0.0 && within(a, b, c))
+                    || (o2 == 0.0 && within(a, b, d))
+                    || (o3 == 0.0 && within(c, d, a))
+                    || (o4 == 0.0 && within(c, d, b))
+            }
+            1 => {
+                // Neighbours: they overlap only if they run back along each other.
+                let corner = if a == c || a == d { a } else { b };
+                let mine = if corner == a { b } else { a };
+                let other = if corner == c { d } else { c };
+                let along = (other.x - corner.x) * (mine.x - corner.x) + (other.y - corner.y) * (mine.y - corner.y);
+                orient(corner, mine, other) == 0.0 && along > 0.0
+            }
+            // The same edge, or one run back over.
+            _ => !(a == c && b == d),
+        }
+    };
+    for (a, b) in rings.iter().flat_map(|r| r.iter().zip(r.iter().cycle().skip(1)).take(r.len())) {
+        let mut crossed = false;
+        edges.each(Rect::from_points(*a, *b), |c, d| crossed = crossed || meet(*a, *b, c, d));
+        if crossed {
+            return true;
+        }
+    }
+    false
+}
+
+/// The part of a shape inside the rectangle `cell`, as contours (holes running the other way),
+/// for `rings` that don't cross ([`rings_cross`]). Unlike [`clip`] ring by ring, the pieces of
+/// the outline inside the cell are joined along the cell's sides as the shape is: a cell the
+/// outline leaves and comes back into is cut into separate parts, not one part tied to the
+/// other along the side. Where the outline crosses a side, the point depends only on the
+/// outline's edge and the side's line, so the cells either side cut it at exactly the same point.
+fn cut_cell(rings: &[Vec<Point>], cell: Rect) -> Vec<Vec<Point>> {
+    let (w, h) = (cell.width(), cell.height());
+    if !(w > 0.0 && h > 0.0) {
+        return vec![];
+    }
+    let perimeter = 2.0 * (w + h);
+    let inside = |p: Point| p.x >= cell.x0 && p.x <= cell.x1 && p.y >= cell.y0 && p.y <= cell.y1;
+    let on_x = |a: Point, b: Point, x: f64| Point::new(x, a.y + (x - a.x) / (b.x - a.x) * (b.y - a.y));
+    let on_y = |a: Point, b: Point, y: f64| Point::new(a.x + (y - a.y) / (b.y - a.y) * (b.x - a.x), y);
+    // The part of `a`→`b` inside the cell, as its ends' parameters and points (Liang–Barsky); an
+    // end on a side is computed from that side's line.
+    let span = |a: Point, b: Point| -> Option<(f64, Point, f64, Point)> {
+        let (mut t0, mut p0, mut t1, mut p1) = (0.0, a, 1.0, b);
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let mut side = |d: f64, t: f64, at: Point| {
+            if d > 0.0 && t > t0 {
+                (t0, p0) = (t, at);
+            } else if d < 0.0 && t < t1 {
+                (t1, p1) = (t, at);
+            }
+        };
+        if dx == 0.0 {
+            if a.x < cell.x0 || a.x > cell.x1 {
+                return None;
+            }
+        } else {
+            side(dx, (cell.x0 - a.x) / dx, on_x(a, b, cell.x0));
+            side(-dx, (cell.x1 - a.x) / dx, on_x(a, b, cell.x1));
+        }
+        if dy == 0.0 {
+            if a.y < cell.y0 || a.y > cell.y1 {
+                return None;
+            }
+        } else {
+            side(dy, (cell.y0 - a.y) / dy, on_y(a, b, cell.y0));
+            side(-dy, (cell.y1 - a.y) / dy, on_y(a, b, cell.y1));
+        }
+        (t0 < t1).then_some((t0, p0, t1, p1))
+    };
+    // How far round the cell's border a point on it is, anticlockwise (the way the cell's own
+    // outline runs, filled on its left) from its first corner.
+    let around = |p: Point| -> f64 {
+        let d = [(p.y - cell.y0).abs(), (p.x - cell.x1).abs(), (p.y - cell.y1).abs(), (p.x - cell.x0).abs()];
+        let nearest = (0..4).min_by(|i, j| d[*i].total_cmp(&d[*j])).unwrap_or(0);
+        match nearest {
+            0 => (p.x - cell.x0).clamp(0.0, w),
+            1 => w + (p.y - cell.y0).clamp(0.0, h),
+            2 => w + h + (cell.x1 - p.x).clamp(0.0, w),
+            _ => (2.0 * w + h + (cell.y1 - p.y).clamp(0.0, h)) % perimeter,
+        }
+    };
+    let corners = [
+        (0.0, Point::new(cell.x0, cell.y0)),
+        (w, Point::new(cell.x1, cell.y0)),
+        (w + h, Point::new(cell.x1, cell.y1)),
+        (2.0 * w + h, Point::new(cell.x0, cell.y1)),
+    ];
+    // The outline's runs through the cell, each from where it comes in to where it leaves, and
+    // the rings wholly inside the cell.
+    let mut runs: Vec<Vec<Point>> = vec![];
+    let mut whole: Vec<Vec<Point>> = vec![];
+    let mut beyond: Vec<&Vec<Point>> = vec![];
+    for ring in rings {
+        let n = ring.len();
+        let Some(first) = ring.iter().position(|p| !inside(*p)) else {
+            whole.push(ring.clone());
+            continue;
+        };
+        let mut run: Option<Vec<Point>> = None;
+        let mut touched = false;
+        for k in 0..n {
+            let (Some(a), Some(b)) = (ring.get((first + k) % n), ring.get((first + k + 1) % n)) else { continue };
+            match span(*a, *b) {
+                None => {
+                    // Out of the cell from `a` on: a run that reached `a` ends there.
+                    if let Some(r) = run.take() {
+                        runs.push(r);
+                    }
+                }
+                Some((t0, p0, t1, p1)) => {
+                    touched = true;
+                    if t0 > 0.0 {
+                        if let Some(r) = run.take() {
+                            runs.push(r);
+                        }
+                        run = Some(vec![p0]);
+                    }
+                    let r = run.get_or_insert_with(|| vec![p0]);
+                    if t1 < 1.0 {
+                        r.push(p1);
+                        runs.extend(run.take());
+                    } else {
+                        r.push(*b);
+                    }
+                }
+            }
+        }
+        runs.extend(run.take());
+        if !touched {
+            beyond.push(ring);
+        }
+    }
+    runs.retain(|r| r.len() >= 2);
+    let mut out: Vec<Vec<Point>> = vec![];
+    if runs.is_empty() {
+        // No outline crosses the cell's border, so the rings beyond it either fill all of the cell or none of it.
+        let filled_here = beyond.iter().filter(|r| contains(r, cell.center())).count() % 2 == 1;
+        if filled_here {
+            out.push(corners.iter().map(|c| c.1).collect());
+        }
+    } else {
+        // Join the runs: from where one leaves, along the border the way the cell runs (keeping
+        // the shape on the left) to where the next comes in.
+        let ends: Vec<(f64, f64)> = runs.iter().map(|r| (around(r[0]), around(r[r.len() - 1]))).collect();
+        let mut used = vec![false; runs.len()];
+        for start in 0..runs.len() {
+            if used[start] {
+                continue;
+            }
+            let mut contour: Vec<Point> = vec![];
+            let mut k = start;
+            for _ in 0..=runs.len() {
+                used[k] = true;
+                contour.extend(runs[k].iter().copied());
+                let leave = ends[k].1;
+                // The next run in along the border (this one's own start closes the contour).
+                let gap = |s: f64| (s - leave).rem_euclid(perimeter);
+                let next = (0..runs.len()).filter(|j| !used[*j] || *j == start).min_by(|i, j| gap(ends[*i].0).total_cmp(&gap(ends[*j].0)));
+                let Some(next) = next else { break };
+                let reach = gap(ends[next].0);
+                let mut passed: Vec<(f64, Point)> =
+                    corners.iter().map(|(s, p)| ((s - leave).rem_euclid(perimeter), *p)).filter(|(g, _)| *g > 0.0 && *g < reach).collect();
+                passed.sort_by(|a, b| a.0.total_cmp(&b.0));
+                contour.extend(passed.into_iter().map(|(_, p)| p));
+                if next == start {
+                    break;
+                }
+                k = next;
+            }
+            contour.dedup_by(|a, b| a.distance(*b) < 1e-12);
+            while contour.len() > 1 && contour.first().zip(contour.last()).is_some_and(|(a, b)| a.distance(*b) < 1e-12) {
+                contour.pop();
+            }
+            out.push(contour);
+        }
+    }
+    out.extend(whole);
+    out.retain(|c| c.len() >= 3 && signed_area(c).abs() > 1e-12 * cell.area().max(1e-12));
+    out
+}
+
 /// The shape's surface as a membrane under pressure, held at zero along its outline (and its
 /// holes): the solution of ∇²φ = −1 on a grid, with each node's distance to the outline along the
 /// grid lines taken into account where it is less than a grid step (Shortley–Weller), so the
@@ -1239,11 +1435,16 @@ pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) 
     let at = |qx: usize, qy: usize| Point::new(bounds.x0 + qx as f64 * unit, bounds.y0 + qy as f64 * unit);
     let base = |i: usize, j: usize| Rect::from_points(at(i * FINE, j * FINE), at((i + 1) * FINE, (j + 1) * FINE));
     // The shape's part of a rectangle, as rings.
+    // Rings that cross each other are cut ring by ring instead, and joined by the fill rule.
+    let simple = !rings_cross(&rings, &edges);
     let cut = |r: Rect| -> Vec<Vec<Point>> {
         // A cell no edge crosses is wholly inside the shape or wholly outside it.
         if !edges.touch(r) {
             let corners = vec![Point::new(r.x0, r.y0), Point::new(r.x1, r.y0), Point::new(r.x1, r.y1), Point::new(r.x0, r.y1)];
             return if filled(&rings, r.center()) { vec![corners] } else { vec![] };
+        }
+        if simple {
+            return cut_cell(&rings, r);
         }
         let pieces: Vec<Vec<Point>> = rings.iter().map(|ring| clip(ring, r)).filter(|c| !c.is_empty()).collect();
         if pieces.iter().map(|p| signed_area(p)).sum::<f64>() <= 1e-9 * r.area() {

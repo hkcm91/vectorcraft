@@ -518,3 +518,87 @@ fn a_solid_casts_its_shadow_below_or_behind_when_asked() {
     let r = Revolve { shadow: ShadowPosition::Below, ..Revolve::default() };
     assert!(crate::revolve_lit(&p, b, r).unwrap().shadow.is_some());
 }
+
+/// Straight on, every edge of an inflated surface's pieces away from the outline is shared with
+/// the piece next to it, the other way round: no cracks, no edges ending partway along another's
+/// (T-junctions), and no zero-width slivers tying two parts of a cell together along its side,
+/// which used to rise into fins where the outline left a cell and came back (a star's points).
+#[test]
+fn an_inflated_surface_is_watertight() {
+    use vectorcraft_geom::kurbo::{Circle, Shape};
+    let mut ring = BezPath::new();
+    ring.extend(Circle::new((100.0, 100.0), 80.0).path_elements(0.01));
+    let hole: BezPath = Circle::new((100.0, 100.0), 35.0).path_elements(0.01).collect();
+    ring.extend(hole.reverse_subpaths());
+    let mut star = BezPath::new();
+    for k in 0..10 {
+        let a = std::f64::consts::PI * f64::from(k) / 5.0;
+        let r = if k % 2 == 0 { 90.0 } else { 40.0 };
+        let p = (100.0 + r * a.sin(), 100.0 - r * a.cos());
+        if k == 0 { star.move_to(p) } else { star.line_to(p) }
+    }
+    star.close_path();
+    for (name, b) in [("ring", ring), ("star", star)] {
+        let (p, r) = shape(&b);
+        let f = inflate(&p, r, Inflate::default(), front()).unwrap();
+        let outline = rings(&p, r.width().max(r.height()), MAX_SOLID_POINTS).unwrap();
+        let edges = Edges::new(&outline);
+        assert!(!rings_cross(&outline, &edges), "{name}");
+        let key = |p: Point| ((p.x * 1e6).round() as i64, (p.y * 1e6).round() as i64);
+        let all: Vec<(Point, Point)> = f
+            .iter()
+            .flat_map(|f| f.contours.iter())
+            .flat_map(|c| c.iter().zip(c.iter().cycle().skip(1)).take(c.len()).map(|(a, b)| (*a, *b)))
+            .collect();
+        let set: std::collections::HashSet<_> = all.iter().map(|(a, b)| (key(*a), key(*b))).collect();
+        for (a, b) in &all {
+            assert!(filled(&outline, *a) || edges.distance(*a) < 1e-6, "{name}: {a:?} is outside the shape");
+            let mid = a.midpoint(*b);
+            assert!(set.contains(&(key(*b), key(*a))) || edges.distance(mid) < 1e-6, "{name}: {a:?}–{b:?} is shared with no piece");
+        }
+    }
+}
+
+/// The exact cut of a cell keeps parts the outline leaves and re-enters apart, and its holes.
+#[test]
+fn a_cell_is_cut_to_the_shape_exactly() {
+    // A U: the cell [0, 10]² takes both arms' feet, which only meet below it.
+    let u = vec![
+        Point::new(0.0, -10.0),
+        Point::new(10.0, -10.0),
+        Point::new(10.0, 20.0),
+        Point::new(7.0, 20.0),
+        Point::new(7.0, -5.0),
+        Point::new(3.0, -5.0),
+        Point::new(3.0, 20.0),
+        Point::new(0.0, 20.0),
+    ];
+    let mut u = u;
+    if signed_area(&u) < 0.0 {
+        u.reverse();
+    }
+    let parts = cut_cell(&[u.clone()], Rect::new(-1.0, 0.0, 11.0, 10.0));
+    assert_eq!(parts.len(), 2, "{parts:?}");
+    let total: f64 = parts.iter().map(|c| signed_area(c)).sum();
+    assert!(close(total, 2.0 * 3.0 * 10.0, 1e-9), "{total}");
+    // A cell inside a hole is empty; a cell round a hole keeps it.
+    let mut square = vec![Point::new(0.0, 0.0), Point::new(100.0, 0.0), Point::new(100.0, 100.0), Point::new(0.0, 100.0)];
+    if signed_area(&square) < 0.0 {
+        square.reverse();
+    }
+    let mut hole = vec![Point::new(40.0, 40.0), Point::new(60.0, 40.0), Point::new(60.0, 60.0), Point::new(40.0, 60.0)];
+    if signed_area(&hole) > 0.0 {
+        hole.reverse();
+    }
+    let shape = [square, hole];
+    assert!(cut_cell(&shape, Rect::new(45.0, 45.0, 55.0, 55.0)).is_empty());
+    let round: f64 = cut_cell(&shape, Rect::new(30.0, 30.0, 70.0, 70.0)).iter().map(|c| signed_area(c)).sum();
+    assert!(close(round, 40.0 * 40.0 - 20.0 * 20.0, 1e-9), "{round}");
+    let half: f64 = cut_cell(&shape, Rect::new(50.0, 30.0, 70.0, 70.0)).iter().map(|c| signed_area(c)).sum();
+    assert!(close(half, 20.0 * 40.0 - 10.0 * 20.0, 1e-9), "{half}");
+    assert!(close(cut_cell(&shape, Rect::new(-5.0, -5.0, 5.0, 5.0)).iter().map(|c| signed_area(c)).sum(), 25.0, 1e-9));
+    // Crossing rings are told apart from ones that merely meet at a corner.
+    let tri = |o: f64| vec![Point::new(o, 0.0), Point::new(o + 10.0, 0.0), Point::new(o + 5.0, 8.0)];
+    assert!(rings_cross(&[tri(0.0), tri(5.0)], &Edges::new(&[tri(0.0), tri(5.0)])));
+    assert!(!rings_cross(&[tri(0.0), tri(20.0)], &Edges::new(&[tri(0.0), tri(20.0)])));
+}
