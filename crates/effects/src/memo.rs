@@ -4,7 +4,7 @@
 //! stored ([`vectorcraft_doc::generated`]).
 
 use std::collections::VecDeque;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use vectorcraft_doc::{Node, NodeKind};
 
@@ -15,13 +15,22 @@ type Memo = VecDeque<(u64, Option<Node>)>;
 
 static MEMO: LazyLock<Mutex<Memo>> = LazyLock::new(Mutex::default);
 
-/// FNV-1a of `kind` and the object as saved: the same for the same content.
-fn key(kind: u8, n: &Node) -> Option<u64> {
-    let bytes = serde_json::to_vec(n).ok()?;
+/// FNV-1a of `kind`, the object as saved and the art it draws from elsewhere (`extra`: the
+/// symbols of its graphics): the same for the same content.
+fn key(kind: u8, n: &Node, extra: &[Arc<Node>]) -> Option<u64> {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in std::iter::once(kind).chain(bytes) {
+    let mut add = |b: u8| {
         h ^= u64::from(b);
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    };
+    add(kind);
+    for b in serde_json::to_vec(n).ok()? {
+        add(b);
+    }
+    for e in extra {
+        for b in serde_json::to_vec(&**e).ok()? {
+            add(b);
+        }
     }
     Some(h)
 }
@@ -42,7 +51,12 @@ fn complete(art: &Node) -> bool {
 
 /// `make()`'s art for `n` (of kind `kind`: each evaluator its own), remembered by `n`'s content.
 pub(crate) fn remember(kind: u8, n: &Node, make: impl FnOnce() -> Option<Node>) -> Option<Node> {
-    let Some(k) = key(kind, n) else { return make() };
+    remember_with(kind, n, &[], make)
+}
+
+/// [`remember`], the art also depending on `extra`.
+pub(crate) fn remember_with(kind: u8, n: &Node, extra: &[Arc<Node>], make: impl FnOnce() -> Option<Node>) -> Option<Node> {
+    let Some(k) = key(kind, n, extra) else { return make() };
     let lock = || MEMO.lock().unwrap_or_else(|e| e.into_inner());
     let hit = lock().iter().find(|(h, _)| *h == k).map(|(_, art)| art.clone());
     if let Some(art) = hit

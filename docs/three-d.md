@@ -143,6 +143,17 @@ inflated heart on four cores). Letting go shades it in full again; OK never keep
 the crisp vector outline throughout. The last few 3D arts are remembered by their object's content, so drawing
 an object and finding its bounds shade it once.
 
+**Graphics** (Extrude & Bevel and Inflate) lay symbols of the document on the front surface: a logo on a badge,
+a label on a puffed button. **Add Graphic** places the first symbol in the middle; each graphic has its symbol,
+**Horizontal** and **Vertical** (its centre, as a percentage across and down the object's bounds), **Scale** (of
+the symbol's own size, strokes too) and **Rotation** (anticlockwise), and a button to delete it; up to eight.
+Each fill and stroke of the symbol's art keeps its own paint, is clipped to the shape, follows the surface (an
+inflated front bends it, perspective foreshortens it) and is lit with it: with smooth shading it lies under the
+shading, so highlights and shadows cross it, and flat it takes the shade of the surface under its centre. A
+graphic on a front turned away is hidden. Edit the symbol and every surface showing it updates. Without a
+symbol in the document the section says to make one; a command naming a symbol the document doesn't have is
+refused.
+
 **Presets**: **Matte** (the defaults), **Soft Touch**, **Plastic**, **Glossy**, **Metal**, **Chrome**, **Rim Glow**
 and **Toon**, shown by name while the material matches. Each also sets **Reflections**: **Metal** reflects the
 plain **Gradient**, which keeps it bright however it is turned, **Chrome** and the rest the **Studio**. **Toon** is
@@ -152,7 +163,9 @@ three bands with a small, hard highlight. All values are our own.
 
 `threeD.extrude`: `depth`, `twist`, `taper` (%), `cap`, `bevel` (`none`, `classic`, `rounded`, `cove`, `step`,
 `ogee`), `bevelWidth`, `bevelHeight`, `bevelRepeat`, `bevelSpace` (%), `bevelInside`, `bevelBothSides`.
-`threeD.inflate`: `depth`, `volume` (%), `bothSides`. All three take the view and lighting parameters Revolve
+`threeD.inflate`: `depth`, `volume` (%), `bothSides`. Both take `graphics` (up to eight `{symbol, x, y, scale,
+rotation}`: x and y in % of the bounds, 50 the middle; scale in %, 100 the symbol's size; rotation in degrees).
+All three take the view and lighting parameters Revolve
 uses: `rotationX`, `rotationY`, `rotationZ`, `perspective` (%), `shade`, `lightAzimuth`, `lightElevation`,
 `lightIntensity` (%), `ambient` (%), and the lighting and shadow parameters every 3D effect takes: `lightColor`
 (`#rrggbb`), `lightSoftness` (%), `lights` (up to three `{azimuth, elevation, intensity, color, softness}`),
@@ -176,10 +189,14 @@ out, perspective). No Adobe software, assets, presets or bevel shapes were used.
 
 - **Materials** are our own lighting model (highlight, roughness, metallic, rim light, cel bands, procedural
   reflection backdrops, screen-space ambient occlusion): there are no Adobe Substance materials, no textures,
-  image-based lighting or bump maps, no graphics mapped onto surfaces and no **ray-traced rendering**, so a
+  image-based lighting or bump maps, graphics only on the front of Extrude & Bevel and Inflate (not on their
+  sides, a bevel, a revolved surface or Rotate; no tiling) and no **ray-traced rendering**, so a
   surface never reflects itself or other objects. Faces are painted with the object's top fill (else its top
   stroke) for Extrude & Bevel and Inflate; gradients and patterns are multiplied by the shading, not tinted by
   the lights' colours beyond that. The light gizmo moves the main light only.
+- A graphic is a symbol, drawn as vectors (type in it outlined, images left out). Where a steeply turned Inflate
+  hides part of its own front, a graphic there still shows. On Extrude & Bevel it lies in the front's plane,
+  clipped to the art's outline: with a bevel inside, a graphic reaching into the bevel stays flat over it.
 - Smooth shading is an image: zoomed in far past its resolution, the shading (not the outline) softens, and
   exported SVG and PDF carry it as an embedded PNG. Turn **Smooth shading** off for all-vector faces.
 - Shadows are a blurred projection of the solid on one plane; they don't fall on the object itself or on other

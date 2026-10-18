@@ -512,3 +512,75 @@ fn a_draft_preview_shades_coarser_and_the_same_art_is_made_once() {
     // The validated parameters take the flag.
     assert!(validate_solid(&n, INFLATE, &n.appearance.effects[0].params).is_ok());
 }
+
+/// A document with a symbol "Logo": a 20 pt blue square.
+fn logo_document(blue: f32) -> Document {
+    let mut b = BezPath::new();
+    b.move_to((0.0, 0.0));
+    b.line_to((20.0, 0.0));
+    b.line_to((20.0, 20.0));
+    b.line_to((0.0, 20.0));
+    b.close_path();
+    let art = Node::path(NodeId(50), PathData::from_bezpath(&b), Appearance::basic(Paint::solid(Color::rgb(0.0, 0.0, blue)), Paint::None, 0.0));
+    let mut d = Document::new(400.0, 400.0);
+    d.symbols.push(vectorcraft_doc::Symbol { name: "Logo".into(), art: Arc::new(art) });
+    d
+}
+
+#[test]
+fn a_graphic_is_laid_on_the_front_in_its_own_paint_and_shaded_with_it() {
+    let doc = logo_document(1.0);
+    for id in [EXTRUDE, INFLATE] {
+        let mut n = square_node();
+        let straight = json!({"smoothShading": false, "rotationX": 0, "rotationY": 0, "rotationZ": 0, "graphics": [{"symbol": "Logo"}]});
+        n.appearance.effects.push(fx(id, straight.clone()));
+        let bare = solid_art(&n).unwrap();
+        let art = solid_art_in(&n, Some(&doc)).unwrap();
+        assert_eq!(faces(&art).len(), faces(&bare).len() + 1, "{id}: one more piece, on top");
+        let logo = *faces(&art).last().unwrap();
+        // Straight on, it sits 20 pt across in the middle of the object, blue, lit as the front is.
+        let b = logo.geometric_bounds().unwrap();
+        assert!((b.x0 - 140.0).abs() < 1e-6 && (b.x1 - 160.0).abs() < 1e-6 && (b.y0 - 140.0).abs() < 1e-6, "{id}: {b:?}");
+        let [r, g, bl] = fill_rgb(logo);
+        assert!(r < 0.05 && g < 0.05 && bl > 0.3, "{id}: {r} {g} {bl}");
+        // Turned away, the front and its graphic are hidden.
+        let mut away = square_node();
+        away.appearance.effects.push(fx(id, json!({"smoothShading": false, "rotationY": 180, "graphics": [{"symbol": "Logo"}]})));
+        let away_bare = solid_art(&away).unwrap();
+        assert_eq!(faces(&solid_art_in(&away, Some(&doc)).unwrap()).len(), faces(&away_bare).len(), "{id}");
+        // A symbol edited draws anew; one not in the document adds nothing.
+        assert_ne!(solid_art_in(&n, Some(&logo_document(0.5))).unwrap(), art, "{id}");
+        assert_eq!(solid_art_in(&n, Some(&Document::new(400.0, 400.0))).unwrap(), bare, "{id}");
+    }
+}
+
+#[test]
+fn a_smooth_shaded_graphic_goes_under_the_shading() {
+    let doc = logo_document(1.0);
+    let mut n = square_node();
+    n.appearance.effects.push(fx(INFLATE, json!({"graphics": [{"symbol": "Logo", "scale": 200, "rotation": 30}]})));
+    let art = solid_art_in(&n, Some(&doc)).unwrap();
+    let surface = art.children().unwrap().last().unwrap();
+    let group = &surface.children().unwrap()[0];
+    let NodeKind::Group { children, clip: true } = &group.kind else { panic!("a clip group") };
+    // The outline, the paint, the graphic, then the shading's tint (multiplied) and highlight.
+    let blends: Vec<BlendMode> = children.iter().map(|c| c.blend).collect();
+    assert_eq!(children.len(), 5);
+    assert_eq!(blends[3..], [BlendMode::Multiply, BlendMode::Screen]);
+    let [_, _, b] = fill_rgb(&children[2]);
+    assert_eq!(b, 1.0, "unshaded: the shading lights it");
+    // Without graphics, a flat colour shades straight into one image.
+    let mut plain = square_node();
+    plain.appearance.effects.push(fx(INFLATE, json!({})));
+    let plain = solid_art(&plain).unwrap();
+    assert!(shading_image(plain.children().unwrap().last().unwrap()).1.width > 0);
+}
+
+#[test]
+fn bad_graphics_are_refused() {
+    let n = square_node();
+    for bad in [json!({"graphics": "Logo"}), json!({"graphics": [{"x": 5}]}), json!({"graphics": [{"symbol": "Logo", "scale": "big"}]})] {
+        assert!(validate_solid(&n, EXTRUDE, &bad).is_err(), "{bad}");
+    }
+    assert!(validate_solid(&n, INFLATE, &json!({"graphics": [{"symbol": "Logo", "x": 20, "y": 80, "scale": 50, "rotation": -15}]})).is_ok());
+}

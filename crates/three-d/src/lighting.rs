@@ -279,6 +279,13 @@ impl Shade {
     pub const NONE: Self = Self { tint: [1.0; 3], highlight: [0.0; 3] };
 }
 
+/// Unshaded: the paint as it is.
+impl Default for Shade {
+    fn default() -> Self {
+        Self::NONE
+    }
+}
+
 /// Every light of a view, ready to shade with.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Rig {

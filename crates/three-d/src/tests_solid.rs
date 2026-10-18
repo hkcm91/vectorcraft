@@ -634,3 +634,72 @@ fn an_inflated_ring_has_no_sideways_lean_in_its_normals() {
     }
     assert!(worst < 0.012, "the normals lean sideways by up to {worst}");
 }
+
+/// A square's ring, as art to lay on a surface.
+fn art_square(x: f64, y: f64, s: f64) -> Vec<Vec<Point>> {
+    vec![vec![Point::new(x, y), Point::new(x + s, y), Point::new(x + s, y + s), Point::new(x, y + s)]]
+}
+
+#[test]
+fn art_on_a_flat_front_seen_straight_on_stays_where_it_is() {
+    let (p, b) = shape(&square(0.0, 0.0, 100.0));
+    let art = [art_square(20.0, 30.0, 40.0)];
+    for s in [plane_mapped(&p, b, front(), &art).unwrap(), extrude_mapped(&p, b, Extrude::default(), front(), &art).unwrap()] {
+        let [m] = s.mapped.as_slice() else { panic!("one piece") };
+        let ring = &m.contours[0];
+        // Its edges are cut into short pieces, all on the square's outline.
+        assert!(ring.len() > 4);
+        assert!(
+            ring.iter().all(|q| (q.x - 20.0).abs() < 1e-9 || (q.x - 60.0).abs() < 1e-9 || (q.y - 30.0).abs() < 1e-9 || (q.y - 70.0).abs() < 1e-9)
+        );
+        assert!(ring.iter().all(|q| (20.0 - 1e-9..=60.0 + 1e-9).contains(&q.x) && (30.0 - 1e-9..=70.0 + 1e-9).contains(&q.y)));
+    }
+}
+
+#[test]
+fn art_on_a_front_turned_away_is_hidden() {
+    let (p, b) = shape(&square(0.0, 0.0, 100.0));
+    let art = [art_square(20.0, 30.0, 40.0)];
+    let away = View { rotation_y: 150.0, ..front() };
+    let s = extrude_mapped(&p, b, Extrude::default(), away, &art).unwrap();
+    assert!(s.mapped[0].contours.is_empty());
+    // Turned part way, it foreshortens with the front.
+    let turned = View { rotation_y: 50.0, ..front() };
+    let s = extrude_mapped(&p, b, Extrude::default(), turned, &art).unwrap();
+    let xs: Vec<f64> = s.mapped[0].contours[0].iter().map(|q| q.x).collect();
+    let width = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max) - xs.iter().copied().fold(f64::INFINITY, f64::min);
+    assert!(close(width, 40.0 * 50f64.to_radians().cos(), 1e-6), "{width}");
+}
+
+#[test]
+fn art_on_an_inflated_front_rides_the_puff() {
+    let mut circle = BezPath::new();
+    circle.extend(vectorcraft_geom::kurbo::Shape::path_elements(&vectorcraft_geom::kurbo::Circle::new((50.0, 50.0), 50.0), 0.01));
+    let (p, b) = shape(&circle);
+    let tilted = View { rotation_x: -60.0, ..front() };
+    let art = [art_square(45.0, 45.0, 10.0), art_square(50.0, 0.0, 0.0001)];
+    let puffed = inflate_mapped(&p, b, Inflate::default(), tilted, &art).unwrap();
+    let flat = plane_mapped(&p, b, tilted, &art).unwrap();
+    // The middle is lifted by the puff (50 pt at 50 %), so tilted it shows 43 pt lower down.
+    let centre = |s: &Shaded| s.mapped[0].contours[0].iter().map(|q| q.y).sum::<f64>() / s.mapped[0].contours[0].len() as f64;
+    assert!(close(centre(&puffed) - centre(&flat), 50.0 * 60f64.to_radians().sin(), 2.0), "{} {}", centre(&flat), centre(&puffed));
+    // At the outline the puff is nothing.
+    let rim = |s: &Shaded| s.mapped[1].contours[0][0];
+    assert!(rim(&puffed).distance(rim(&flat)) < 0.5, "{:?} {:?}", rim(&puffed), rim(&flat));
+    // Shaded like the surface under it: in the middle it faces out as flat art does; at the rim
+    // it turns to the side.
+    assert_eq!(puffed.mapped[0].shade, flat.mapped[0].shade);
+    assert_ne!(puffed.mapped[1].shade, flat.mapped[1].shade);
+}
+
+#[test]
+fn mapped_art_is_bounded() {
+    let (p, b) = shape(&square(0.0, 0.0, 100.0));
+    // A huge piece is cut into at most so many points; later pieces are left off.
+    let huge = vec![vec![Point::new(0.0, 0.0), Point::new(1e7, 0.0), Point::new(1e7, 1e7)]; 50];
+    let s = plane_mapped(&p, b, front(), &[huge.clone(), huge]).unwrap();
+    assert!(s.mapped.iter().flat_map(|m| m.contours.iter().flatten()).count() <= MAX_MAPPED_POINTS);
+    let bad = [vec![vec![Point::new(f64::NAN, 0.0), Point::new(1.0, 1.0), Point::new(0.0, 1.0)]]];
+    assert!(plane_mapped(&p, b, front(), &bad).is_err());
+    assert!(plane_mapped(&p, b, front(), &[vec![]]).unwrap().mapped[0].contours.is_empty());
+}

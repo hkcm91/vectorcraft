@@ -3807,6 +3807,9 @@ axis	Both	Ambos
 	Distance	Distância
 	Delete Light	Excluir luz
 	Add Light	Adicionar luz
+	Add Graphic	Adicionar gráfico
+	Delete Graphic	Excluir gráfico
+	Make a symbol to lay it on the surface.	Crie um símbolo para aplicá-lo na superfície.
 	More Lights	Mais luzes
 # 3D materials and lighting presets.
 	Material	Material

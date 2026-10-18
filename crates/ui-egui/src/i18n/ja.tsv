@@ -4363,6 +4363,9 @@ lighting	Light	ライト
 	Distance	距離
 	Delete Light	ライトを削除
 	Add Light	ライトを追加
+	Add Graphic	グラフィックを追加
+	Delete Graphic	グラフィックを削除
+	Make a symbol to lay it on the surface.	シンボルを作成すると、表面に配置できます。
 	More Lights	その他のライト
 # 3D materials and lighting presets.
 	Material	マテリアル

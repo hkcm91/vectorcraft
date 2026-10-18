@@ -125,7 +125,7 @@ fn legacy() -> [(&'static str, Value); 5] {
 }
 
 /// A 3D effect's params for drawing: `raw` (as saved) over the effect's defaults, except that an
-/// option saved before it existed keeps the look it had then ([`legacy`]).
+/// option saved before it existed keeps the look it had then ([`legacy`], and a Revolve's cap).
 pub fn drawing_params(id: &str, raw: &Value) -> Value {
     let mut p = crate::merged_params(id, raw);
     if let Some(o) = p.as_object_mut() {
@@ -133,6 +133,10 @@ pub fn drawing_params(id: &str, raw: &Value) -> Value {
             if raw.get(key).is_none() {
                 o.insert(key.into(), then);
             }
+        }
+        // Revolve drew open profiles as thin shells before it had a cap.
+        if id == crate::revolve::REVOLVE && raw.get("cap").is_none() {
+            o.insert("cap".into(), json!(false));
         }
     }
     p
@@ -349,6 +353,11 @@ pub fn shadow_node(n: &Node, path: PathData, p: &Value, size: f64) -> Node {
 
 /// A face's colour: `paint`'s colour times the shading `tint` plus its `highlight`, channel by
 /// channel, at most white.
+/// How bright a shade leaves a paint: its tint's mean, at most 1 (as a facet's brightness).
+pub fn brightness(tint: [f64; 3]) -> f64 {
+    ((tint[0] + tint[1] + tint[2]) / 3.0).min(1.0)
+}
+
 pub fn shaded(c: Color, tint: [f64; 3], highlight: [f64; 3]) -> Paint {
     let [r, g, b] = c.to_rgb();
     let ch = |c: f32, t: f64, h: f64| (c * t as f32 + h as f32).clamp(0.0, 1.0);
@@ -367,8 +376,9 @@ pub fn shading_side(p: &Value) -> f64 {
 /// the outline its faces cover, as a clip group keeping `id`. A flat colour is shaded straight
 /// into the image (as [`shaded`] colours it); another paint (a gradient, a pattern) fills the
 /// outline, multiplied by an image of the shading's tint and screened by one of its highlight.
-/// The pixels go to [`vectorcraft_doc::generated`]. `None` when the surface has no area.
-pub fn shaded_surface(id: NodeId, shading: &Shading, paint: &Paint, longest: f64) -> Option<Node> {
+/// `overlay` (art laid on the surface) goes between the paint and the shading, which lights it
+/// too; with it a flat colour is drawn the second way. The pixels go to [`vectorcraft_doc::generated`]. `None` when the surface has no area.
+pub fn shaded_surface(id: NodeId, shading: &Shading, paint: &Paint, longest: f64, overlay: Vec<Arc<Node>>) -> Option<Node> {
     let image = |img: vectorcraft_three_d::ShadedImage, blend: BlendMode| -> Option<Arc<Node>> {
         let (width, height) = (img.width, img.height);
         let key = vectorcraft_doc::generated::put(width, height, img.rgba)?;
@@ -383,7 +393,8 @@ pub fn shaded_surface(id: NodeId, shading: &Shading, paint: &Paint, longest: f64
         *clipping = true;
     }
     let children = match paint.color() {
-        Some(c) => {
+        // A flat colour is shaded in one image, unless there is art on it to shade too.
+        Some(c) if overlay.is_empty() => {
             let [r, g, b] = c.to_rgb();
             let colour = |s: &Shade| {
                 let ch = |c: f32, t: f64, h: f64| (c * t as f32 + h as f32).clamp(0.0, 1.0);
@@ -392,12 +403,13 @@ pub fn shaded_surface(id: NodeId, shading: &Shading, paint: &Paint, longest: f64
             let img = shading.layers_at(&[&colour], longest)?.into_iter().next()?;
             vec![Arc::new(clip), image(img, BlendMode::Normal)?]
         }
-        None => {
+        _ => {
             let tint = |s: &Shade| s.tint.map(|t| t.clamp(0.0, 1.0) as f32);
             let highlight = |s: &Shade| s.highlight.map(|h| h.clamp(0.0, 1.0) as f32);
             let mut layers = shading.layers_at(&[&tint, &highlight], longest)?.into_iter();
             let fill = Node::path(id, outline, Appearance { items: vec![AppearanceItem::Fill(FillLayer::new(paint.clone()))], ..Default::default() });
-            vec![Arc::new(clip), Arc::new(fill), image(layers.next()?, BlendMode::Multiply)?, image(layers.next()?, BlendMode::Screen)?]
+            let shade = [image(layers.next()?, BlendMode::Multiply)?, image(layers.next()?, BlendMode::Screen)?];
+            [Arc::new(clip), Arc::new(fill)].into_iter().chain(overlay).chain(shade).collect()
         }
     };
     let mut group = Node::new(id, NodeKind::Group { children, clip: true });

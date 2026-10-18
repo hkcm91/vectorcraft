@@ -91,7 +91,7 @@ fn values_labels_sliders_and_reset_dots_change_the_live_effect_in_one_undo_step(
     h.settle();
     assert!(!h.rect("Advanced").is_negative(), "Advanced is visible without scrolling in a normal window");
     let panel = h.ctx.memory(|m| m.area_rect(Id::new(("dialog", "effect")).with("revolve"))).unwrap();
-    assert!(panel.width() < 420.0 && panel.height() < 540.0, "compact controls: {panel:?}");
+    assert!(panel.width() < 420.0 && panel.height() < 570.0, "compact controls: {panel:?}");
     let label = h.rect("Rotation X");
     h.drag(pos2(label.left() + LABEL_W + 6.0 + VALUE_W / 2.0, label.center().y), vec2(40.0, 0.0));
     assert!(h.value("rotationX") > 0.0, "the value itself drags");
@@ -357,4 +357,44 @@ fn dragging_a_value_previews_a_draft_and_letting_go_shades_it_in_full() {
     let st = h.app.session.doc().unwrap();
     let kept = &st.doc.node(st.selection.objects[0]).unwrap().appearance.effects.last().unwrap().params;
     assert!(kept.get("draftPreview").is_none());
+}
+
+#[test]
+fn material_tab_lays_a_symbol_on_the_surface() {
+    // Without symbols, the section says to make one.
+    let mut h = Harness::with("M100 100 L200 100 L200 200 L100 200 Z", vectorcraft_effects::INFLATE, vec2(1400.0, 1400.0));
+    h.settle();
+    h.click(h.rect("Material").center());
+    h.rect("Graphics");
+    h.rect("Make a symbol to lay it on the surface.");
+    // With one, Add Graphic lays it in the middle, with its place, scale and turn.
+    let mut app = VectorcraftApp::new(Session::new(), Default::default());
+    app.run("file.new", json!({"width":300,"height":300})).unwrap();
+    app.run("shape.rectangle", json!({"x":10,"y":10,"width":20,"height":20})).unwrap();
+    app.run("symbol.new", json!({"name":"Badge"})).unwrap();
+    app.run("path.create", json!({"d": "M100 100 L200 100 L200 200 L100 200 Z"})).unwrap();
+    app.run("paint.setFill", json!({"color":"#338ad6"})).unwrap();
+    app.run("effect.dialog", json!({"effect":vectorcraft_effects::INFLATE,"item":null})).unwrap();
+    h.app = app;
+    h.settle();
+    h.click(h.rect("Material").center());
+    // The section is at the bottom of the tab: scroll down to it.
+    let over = h.rect("Graphics").center();
+    let wheel =
+        Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: vec2(0.0, -20.0), phase: egui::TouchPhase::Move, modifiers: Default::default() };
+    h.frame(vec![Event::PointerMoved(over), wheel.clone()]);
+    h.settle();
+    h.click(h.rect("Add Graphic").center());
+    let graphics = h.app.ui.dialog.as_ref().unwrap().fields.get("graphics").and_then(Value::as_array).cloned().unwrap_or_default();
+    assert_eq!(graphics, vec![json!({"symbol": "Badge", "x": 50.0, "y": 50.0, "scale": 100.0, "rotation": 0.0})]);
+    let over = h.rect("Graphics").center();
+    h.frame(vec![Event::PointerMoved(over), wheel.clone()]);
+    h.settle();
+    for label in ["Badge", "Horizontal", "Vertical", "Scale", "Rotation"] {
+        h.rect(label);
+    }
+    // The live preview takes it.
+    let st = h.app.session.doc().unwrap();
+    let node = st.doc.node(st.selection.objects[0]).unwrap();
+    assert_eq!(node.appearance.effects.last().unwrap().params["graphics"][0]["symbol"], json!("Badge"));
 }

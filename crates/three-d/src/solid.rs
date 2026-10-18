@@ -254,6 +254,71 @@ pub struct Shaded {
     pub shading: Option<Shading>,
     /// The contact shadow where the solid meets the shadow's plane, and how strongly it shows.
     pub contact: Option<(PathData, f64)>,
+    /// The art laid on the front surface ([`extrude_mapped`], [`inflate_mapped`],
+    /// [`plane_mapped`]), piece by piece.
+    pub mapped: Vec<Mapped>,
+}
+
+/// A piece of art laid on a solid's front surface.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Mapped {
+    /// Its rings on the surface, projected: none where the surface under it faces away.
+    pub contours: Vec<Vec<Point>>,
+    /// How the surface under its centre is lit.
+    pub shade: Shade,
+}
+
+/// Mapped art's points in all, at most: more pieces are left off.
+const MAX_MAPPED_POINTS: usize = 200_000;
+
+/// `art` (pieces of rings, in the art's coordinates) laid on a surface and projected. `place`
+/// gives a point's place on the surface and the surface's outward normal there (view space).
+/// Edges are cut to at most `size / 96` so the art bends with a curved surface and perspective.
+fn map_art(art: &[Vec<Vec<Point>>], size: f64, camera: &Camera, place: impl Fn(Point) -> (V3, V3)) -> Result<Vec<Mapped>, String> {
+    let longest = (size / 96.0).max(0.01);
+    let mut total = 0;
+    let mut out = Vec::with_capacity(art.len());
+    for piece in art {
+        let count: usize = piece.iter().map(Vec::len).sum();
+        if count == 0 {
+            out.push(Mapped::default());
+            continue;
+        }
+        let mean = piece.iter().flatten().fold((0.0, 0.0), |(x, y), p| (x + p.x, y + p.y));
+        let centre = Point::new(mean.0 / count as f64, mean.1 / count as f64);
+        if !centre.x.is_finite() || !centre.y.is_finite() {
+            return Err("The art laid on the 3D surface contains invalid coordinates".into());
+        }
+        let (at, normal) = place(centre);
+        // Faces away, or seen exactly edge-on (not a number): hidden.
+        if camera.facing(at, normal).partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+            out.push(Mapped { contours: vec![], shade: camera.shade(normal) });
+            continue;
+        }
+        let mut contours = Vec::with_capacity(piece.len());
+        for ring in piece {
+            let mut projected = Vec::with_capacity(ring.len());
+            for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)).take(ring.len()) {
+                let cuts = (a.distance(*b) / longest).ceil();
+                let cuts = if cuts.is_finite() { (cuts as usize).clamp(1, 4096) } else { 1 };
+                total += cuts;
+                if total > MAX_MAPPED_POINTS {
+                    return Ok(out);
+                }
+                for k in 0..cuts {
+                    let p = a.lerp(*b, k as f64 / cuts as f64);
+                    let q = camera.project(place(p).0);
+                    if !q.x.is_finite() || !q.y.is_finite() {
+                        return Err("The 3D projection is not finite".into());
+                    }
+                    projected.push(q);
+                }
+            }
+            contours.push(projected);
+        }
+        out.push(Mapped { contours, shade: camera.shade(normal) });
+    }
+    Ok(out)
 }
 
 impl Facet {
@@ -601,13 +666,13 @@ impl Builder<'_> {
         let view = &camera.view;
         let shadow = lighting::cast(&self.casters, camera.light, view.shadow_direction, view.shadow, view.shadow_distance, |v| camera.project(v));
         let contact = lighting::contact(&self.casters, camera.view.shadow, camera.view.shadow_distance, |v| camera.project(v));
-        Shaded { facets: self.facets, shadow, shading, contact }
+        Shaded { facets: self.facets, shadow, shading, contact, mapped: vec![] }
     }
 }
 
 /// The area-weighted normal of (possibly non-planar) contours, by Newell's method: for contours
 /// winding with their filled side on the left as seen from in front, it points to the front.
-fn newell(contours: &[Vec<V3>]) -> V3 {
+pub(crate) fn newell(contours: &[Vec<V3>]) -> V3 {
     let mut n = V3::default();
     for c in contours {
         for (a, b) in c.iter().zip(c.iter().cycle().skip(1)).take(c.len()) {
@@ -740,11 +805,16 @@ pub fn extrude(path: &PathData, bounds: Rect, options: Extrude, view: View) -> R
 
 /// [`extrude`], with the shadow the solid casts.
 pub fn extrude_lit(path: &PathData, bounds: Rect, options: Extrude, view: View) -> Result<Shaded, String> {
+    extrude_mapped(path, bounds, options, view, &[])
+}
+
+/// [`extrude_lit`], with `art` (pieces of rings in the art's coordinates) laid on the front.
+pub fn extrude_mapped(path: &PathData, bounds: Rect, options: Extrude, view: View, art: &[Vec<Vec<Point>>]) -> Result<Shaded, String> {
     check_bounds(bounds)?;
     let o = options.sanitized();
     // No depth: the flat shape, seen from either side.
     if o.depth <= 0.0 {
-        return plane_lit(path, bounds, view);
+        return plane_mapped(path, bounds, view, art);
     }
     let rings = rings(path, bounds.width().max(bounds.height()), MAX_SOLID_POINTS)?;
     let camera = Camera::new(view, bounds, o.depth);
@@ -775,7 +845,9 @@ pub fn extrude_lit(path: &PathData, bounds: Rect, options: Extrude, view: View) 
             b.face(rings.iter().map(|r| ring_at(r, s)).collect(), camera.rotate(V3(0.0, 0.0, n)))?;
         }
     }
-    Ok(b.finish())
+    let front = camera.rotate(V3(0.0, 0.0, 1.0));
+    let mapped = map_art(art, bounds.width().max(bounds.height()), &camera, |p| (camera.place(p, z(0.0)), front))?;
+    Ok(Shaded { mapped, ..b.finish() })
 }
 
 /// Rotate: the flat art turned in 3D about the centre of `bounds` (which may be larger than the
@@ -786,13 +858,20 @@ pub fn plane(path: &PathData, bounds: Rect, view: View) -> Result<Vec<Facet>, St
 
 /// [`plane`], with the shadow the turned art casts.
 pub fn plane_lit(path: &PathData, bounds: Rect, view: View) -> Result<Shaded, String> {
+    plane_mapped(path, bounds, view, &[])
+}
+
+/// [`plane_lit`], with `art` (pieces of rings in the art's coordinates) laid on the art's front.
+pub fn plane_mapped(path: &PathData, bounds: Rect, view: View, art: &[Vec<Vec<Point>>]) -> Result<Shaded, String> {
     check_bounds(bounds)?;
     let rings = rings(path, bounds.width().max(bounds.height()), MAX_PLANE_POINTS)?;
     let camera = Camera::new(view, bounds, 0.0);
     let mut b = Builder { camera: &camera, closed: false, facets: vec![], casters: vec![], smooth: vec![], hidden: vec![] };
     let contours: Vec<Vec<V3>> = rings.iter().map(|r| r.iter().map(|p| camera.place(*p, 0.0)).collect()).collect();
-    b.face(contours, camera.rotate(V3(0.0, 0.0, 1.0)))?;
-    Ok(b.finish())
+    let front = camera.rotate(V3(0.0, 0.0, 1.0));
+    b.face(contours, front)?;
+    let mapped = map_art(art, bounds.width().max(bounds.height()), &camera, |p| (camera.place(p, 0.0), front))?;
+    Ok(Shaded { mapped, ..b.finish() })
 }
 
 /// The distance from `p` to the segment `a`–`b`.
@@ -1394,6 +1473,11 @@ pub fn inflate(path: &PathData, bounds: Rect, options: Inflate, view: View) -> R
 
 /// [`inflate`], with the shadow the solid casts.
 pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) -> Result<Shaded, String> {
+    inflate_mapped(path, bounds, options, view, &[])
+}
+
+/// [`inflate_lit`], with `art` (pieces of rings in the art's coordinates) laid on the puffed front.
+pub fn inflate_mapped(path: &PathData, bounds: Rect, options: Inflate, view: View, art: &[Vec<Vec<Point>>]) -> Result<Shaded, String> {
     check_bounds(bounds)?;
     let o = options.sanitized();
     let rings = rings(path, bounds.width().max(bounds.height()), MAX_SOLID_POINTS)?;
@@ -1644,7 +1728,9 @@ pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) 
             }
         }
     }
-    Ok(b.finish())
+    // Art outside the shape stays on the plane of its outline.
+    let mapped = map_art(art, size, &camera, |p| (camera.place(p, half + lift(p)), camera.rotate(slope_normal(p))))?;
+    Ok(Shaded { mapped, ..b.finish() })
 }
 
 #[cfg(test)]

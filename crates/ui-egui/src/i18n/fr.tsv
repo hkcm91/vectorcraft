@@ -4795,6 +4795,9 @@ theme	Appearance	Apparence
 	Behind Object	Derrière l’objet
 	Delete Light	Supprimer la lumière
 	Add Light	Ajouter une lumière
+	Add Graphic	Ajouter un graphisme
+	Delete Graphic	Supprimer le graphisme
+	Make a symbol to lay it on the surface.	Créez un symbole pour le poser sur la surface.
 	More Lights	Autres lumières
 # 3D materials and lighting presets.
 	Material	Matériau

@@ -131,6 +131,17 @@ fn check_revolve_count(n: &Node, cmd: &str) -> Result<()> {
 
 const ONE_3D: &str = "An object takes one 3D effect. Edit the existing effect's options, or remove it first.";
 
+/// Every symbol a 3D effect's graphics name is in the document.
+fn symbols_exist(s: &Session, params: &Value, cmd: &str) -> Result<()> {
+    let doc = &s.doc()?.doc;
+    for g in effects::graphics::graphics(params) {
+        if !doc.symbols.iter().any(|sym| sym.name == g.symbol) {
+            return Err(bad(cmd, format!("There is no symbol named \"{}\" to lay on the surface", g.symbol)));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn apply(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "effect.apply";
     let id = str_param(p, "effect").or_else(|| str_param(p, "id")).ok_or_else(|| bad(C, "missing `effect` id"))?;
@@ -164,6 +175,7 @@ pub(crate) fn apply(s: &mut Session, p: &Value) -> Result<Value> {
                 }
             } else {
                 effects::validate_solid(n, id, &effect.params).map_err(|e| bad(C, e))?;
+                symbols_exist(s, &effect.params, C)?;
             }
             if effects::has_revolve(n) || effects::has_solid(n) {
                 return Err(bad(C, ONE_3D));
@@ -318,6 +330,7 @@ fn set_params(s: &mut Session, p: &Value) -> Result<Value> {
                 effects::validate_revolve(n, &prospective).map_err(|e| bad(C, e))?;
             } else {
                 effects::validate_solid(n, &e.id, &prospective).map_err(|e| bad(C, e))?;
+                symbols_exist(s, &prospective, C)?;
             }
         }
     }
@@ -561,6 +574,43 @@ mod tests {
         assert_eq!(node(&s, id).path_data(), Some(&source));
         s.execute("edit.undo", &json!({})).unwrap();
         assert_eq!(effects_for_test(&s, id), before);
+    }
+
+    /// A symbol laid on a solid's front: refused when the document has no such symbol, drawn and
+    /// exported in its own colour when it has.
+    #[test]
+    fn graphics_name_symbols_of_the_document() {
+        let (mut s, id) = session_with_rect();
+        let logo = s.execute("shape.rectangle", &json!({"x": 300, "y": 300, "width": 40, "height": 40})).unwrap();
+        s.execute("paint.setFill", &json!({"ids": [logo["id"]], "color": "#1a2bff"})).unwrap();
+        s.execute("symbol.new", &json!({"name": "Logo", "ids": [logo["id"]]})).unwrap();
+        let apply = |s: &mut Session, symbol: &str| {
+            let params = json!({"rotationX": 0, "rotationY": 0, "rotationZ": 0, "smoothShading": false, "graphics": [{"symbol": symbol}]});
+            s.execute("effect.apply", &json!({"effect": "threeD.extrude", "ids": [id.0], "item": null, "params": params}))
+        };
+        let err = apply(&mut s, "Missing").unwrap_err().to_string();
+        assert!(err.contains("Missing"), "{err}");
+        apply(&mut s, "Logo").unwrap();
+        // Laid at the size it was drawn (a symbol keeps its art in a small square and its size apart):
+        // straight on, its fill is 40 pt across, in the middle of the 100 pt square.
+        let doc = &s.doc().unwrap().doc;
+        let art = effects::solid_art_in(doc.node(id).unwrap(), Some(doc)).unwrap();
+        let surface = art.children().unwrap().last().unwrap();
+        let pieces = surface.children().unwrap();
+        let fill = pieces[pieces.len() - 2].geometric_bounds().unwrap();
+        assert!((fill.x0 - 130.0).abs() < 1e-6 && (fill.width() - 40.0).abs() < 1e-6, "{fill:?}");
+        assert!(
+            s.execute("effect.setParams", &json!({"index": 0, "params": {"graphics": [{"symbol": "Gone"}]}, "ids": [id.0], "item": null})).is_err()
+        );
+        let paths = |s: &mut Session| {
+            let svg = s.execute("document.serialize", &json!({"format": "svg"})).unwrap();
+            let svg = svg["data"].as_str().or_else(|| svg["text"].as_str()).map(str::to_string).unwrap_or_else(|| svg.to_string());
+            svg.matches("<path").count()
+        };
+        let with = paths(&mut s);
+        s.execute("effect.setParams", &json!({"index": 0, "params": {"graphics": []}, "ids": [id.0], "item": null})).unwrap();
+        // The logo's fill and its stroke (a new rectangle's default).
+        assert_eq!(paths(&mut s) + 2, with, "the logo is exported on the surface");
     }
 
     /// Extrude & Bevel, Inflate and Rotate: applied by command, saved and reopened, edited,

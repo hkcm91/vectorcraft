@@ -4369,6 +4369,9 @@ lighting	Light	Luce
 	Distance	Distanza
 	Delete Light	Elimina luce
 	Add Light	Aggiungi luce
+	Add Graphic	Aggiungi grafica
+	Delete Graphic	Elimina grafica
+	Make a symbol to lay it on the surface.	Crea un simbolo per applicarlo sulla superficie.
 	More Lights	Altre luci
 # 3D materials and lighting presets.
 	Material	Materiale

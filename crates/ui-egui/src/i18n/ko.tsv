@@ -4333,6 +4333,9 @@ lighting	Light	광원
 	Distance	거리
 	Delete Light	조명 삭제
 	Add Light	조명 추가
+	Add Graphic	그래픽 추가
+	Delete Graphic	그래픽 삭제
+	Make a symbol to lay it on the surface.	심볼을 만들면 표면에 배치할 수 있습니다.
 	More Lights	추가 조명
 # 3D materials and lighting presets.
 	Material	재질

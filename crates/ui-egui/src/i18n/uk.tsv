@@ -4349,6 +4349,9 @@ lighting	Light	Світло
 	Distance	Відстань
 	Delete Light	Видалити світло
 	Add Light	Додати світло
+	Add Graphic	Додати графіку
+	Delete Graphic	Видалити графіку
+	Make a symbol to lay it on the surface.	Створіть символ, щоб нанести його на поверхню.
 	More Lights	Додаткове світло
 # 3D materials and lighting presets.
 	Material	Матеріал

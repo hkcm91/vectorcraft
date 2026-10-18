@@ -37,6 +37,7 @@ pub fn revolve_options(p: &Value) -> Revolve {
         light_intensity: num(p, "lightIntensity", 80.0) / 100.0,
         ambient: num(p, "ambient", 25.0) / 100.0,
         shade: flag(p, "shade", true),
+        cap: flag(p, "cap", true),
         ..crate::lighting::lighting(p).into_revolve()
     }
 }
@@ -89,7 +90,7 @@ fn surface(
     let shadow = crate::lighting::shadow_nodes(n, shadow, contact, &params, b.width().max(b.height()));
     // Smooth shading: the surface pixel by pixel.
     if let Some(shading) = &shading
-        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, &paint, crate::lighting::shading_side(&params))
+        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, &paint, crate::lighting::shading_side(&params), vec![])
     {
         let mut group = Node::group(n.id, shadow.into_iter().chain([Arc::new(art)]).collect());
         group.opacity = opacity;
@@ -312,6 +313,25 @@ mod tests {
         assert_eq!(expand_revolve_art(&n).unwrap().children().unwrap()[0], expanded.children().unwrap()[0]);
     }
 
+    #[test]
+    fn new_revolves_are_capped_and_ones_saved_before_the_cap_stay_hollow() {
+        let faces = |params: Value| {
+            let mut n = profile_node();
+            n.appearance.effects.push(Effect { params, ..fx() });
+            revolve_art(&n).unwrap().children().unwrap()[0].children().unwrap().len()
+        };
+        // Off the axis and seen from above, the profile's ends turn into lids.
+        let mut legacy = fx().params;
+        legacy.as_object_mut().unwrap().remove("cap");
+        legacy["offset"] = json!(20.0);
+        legacy["rotationX"] = json!(-30.0);
+        let solid = crate::new_effect(REVOLVE, &json!({"smoothShading": false, "offset": 20.0, "rotationX": -30.0})).unwrap();
+        assert_eq!(solid.params["cap"], json!(true));
+        let hollow = faces(json!({"smoothShading": false, "offset": 20.0, "rotationX": -30.0, "cap": false}));
+        assert_eq!(faces(legacy.clone()), hollow, "saved without a cap: hollow, as drawn then");
+        assert!(faces(solid.params) > hollow);
+        assert_eq!(crate::drawing_params(REVOLVE, &legacy)["cap"], json!(false), "the dialog shows it hollow too");
+    }
     #[test]
     fn smooth_shading_draws_the_surface_pixel_by_pixel() {
         let mut n = profile_node();

@@ -3738,6 +3738,9 @@ lighting	Light	光源
 	Distance	距離
 	Delete Light	刪除光源
 	Add Light	新增光源
+	Add Graphic	新增圖形
+	Delete Graphic	刪除圖形
+	Make a symbol to lay it on the surface.	建立符號後即可將其放到表面上。
 	More Lights	更多光源
 # 3D materials and lighting presets.
 	Material	材質

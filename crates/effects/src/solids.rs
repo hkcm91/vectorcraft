@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use vectorcraft_doc::color::{BlendMode, Paint};
-use vectorcraft_doc::{Appearance, AppearanceItem, Effect, FillLayer, Node, NodeKind, StrokeLayer};
-use vectorcraft_geom::{FillRule, PathData, Rect};
+use vectorcraft_doc::{Appearance, AppearanceItem, Document, Effect, FillLayer, Node, NodeKind, StrokeLayer};
+use vectorcraft_geom::{FillRule, PathData, Point, Rect};
 use vectorcraft_three_d::{Bevel, BevelShape, Extrude, Inflate, Shaded, View};
 
 use crate::util::{flag, num, text};
@@ -113,12 +113,13 @@ fn profile(n: &Node) -> Option<(PathData, FillRule)> {
     }
 }
 
-fn facets(id: &str, path: &PathData, bounds: Rect, p: &Value) -> Result<Shaded, String> {
+/// The solid's facets, with `art` (pieces of rings) laid on its front.
+fn facets(id: &str, path: &PathData, bounds: Rect, p: &Value, art: &[Vec<Vec<Point>>]) -> Result<Shaded, String> {
     let view = view_options(p);
     match id {
-        EXTRUDE => vectorcraft_three_d::extrude_lit(path, bounds, extrude_options(p), view),
-        INFLATE => vectorcraft_three_d::inflate_lit(path, bounds, inflate_options(p), view),
-        _ => vectorcraft_three_d::plane_lit(path, bounds, view),
+        EXTRUDE => vectorcraft_three_d::extrude_mapped(path, bounds, extrude_options(p), view, art),
+        INFLATE => vectorcraft_three_d::inflate_mapped(path, bounds, inflate_options(p), view, art),
+        _ => vectorcraft_three_d::plane_mapped(path, bounds, view, art),
     }
 }
 
@@ -135,15 +136,33 @@ pub fn validate_solid(n: &Node, id: &str, p: &Value) -> Result<(), String> {
         return Err(format!("bevel must be none or one of {}", names.join(", ")));
     }
     crate::lighting::validate(p)?;
-    facets(id, &path, b, p).map(|_| ())
+    crate::graphics::validate(p)?;
+    facets(id, &path, b, p, &[]).map(|_| ())
+}
+
+/// A piece of a graphic on the surface: `contours` (projected) filled with `paint`.
+fn mapped_node(n: &Node, contours: &[Vec<Point>], items: Vec<AppearanceItem>) -> Arc<Node> {
+    let path = PathData::new(contours.iter().map(|c| vectorcraft_geom::SubPath::polyline(c, true)).collect());
+    Arc::new(Node::path(n.id, path, Appearance { items, ..Default::default() }))
+}
+
+/// A fill of `paint` at `opacity`.
+fn fill(paint: Paint, opacity: f32) -> AppearanceItem {
+    let mut f = FillLayer::new(paint);
+    f.opacity = opacity;
+    AppearanceItem::Fill(f)
 }
 
 /// One surface as a group with the paint's opacity and blend mode (so overlapping facets don't
 /// add up their transparency): with smooth shading the surface pixel by pixel, otherwise each
-/// facet a path shaded from `paint`.
-fn surface(n: &Node, shaded: Shaded, paint: &Paint, opacity: f32, blend: BlendMode, longest: f64) -> Node {
+/// facet a path shaded from `paint`. `pieces` are the graphics laid on it ([`Shaded::mapped`]).
+fn surface(n: &Node, mut shaded: Shaded, paint: &Paint, opacity: f32, blend: BlendMode, longest: f64, pieces: &[crate::graphics::Piece]) -> Node {
+    let mapped = std::mem::take(&mut shaded.mapped);
+    let laid = || mapped.iter().zip(pieces).filter(|(m, _)| !m.contours.is_empty());
+    // Pixel by pixel, the graphics go under the shading, which lights them with the surface.
+    let overlay: Vec<Arc<Node>> = laid().map(|(m, piece)| mapped_node(n, &m.contours, vec![fill(piece.paint.clone(), piece.opacity)])).collect();
     if let Some(shading) = &shaded.shading
-        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, paint, longest)
+        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, paint, longest, overlay)
     {
         let mut group = Node::group(n.id, vec![Arc::new(art)]);
         group.opacity = opacity;
@@ -175,6 +194,14 @@ fn surface(n: &Node, shaded: Shaded, paint: &Paint, opacity: f32, blend: BlendMo
                 .collect();
             Arc::new(Node::path(n.id, face.path(), Appearance { items, ..Default::default() }))
         })
+        .chain(laid().map(|(m, piece)| {
+            // Flat, each piece takes the shade of the surface under its centre.
+            let items = match piece.paint.color() {
+                Some(c) => vec![fill(crate::lighting::shaded(c, m.shade.tint, m.shade.highlight), piece.opacity)],
+                None => crate::lighting::shading_layers(&piece.paint, crate::lighting::brightness(m.shade.tint), m.shade.highlight),
+            };
+            mapped_node(n, &m.contours, items)
+        }))
         .collect();
     let mut group = Node::group(n.id, children);
     group.opacity = opacity;
@@ -200,7 +227,7 @@ fn region(path: &PathData, rule: FillRule, item: &AppearanceItem) -> PathData {
 /// The 3D art of one effect `fx` on `path` (already through the effects before it).
 /// Extrude & Bevel and Inflate build a solid from the outline, painted with the top visible fill
 /// (or, without one, the top stroke); Rotate turns every fill and stroke, each in its own paint.
-fn art_for(n: &Node, fx: &Effect, path: &PathData, rule: FillRule, items: &[&AppearanceItem]) -> Option<Vec<Arc<Node>>> {
+fn art_for(n: &Node, fx: &Effect, path: &PathData, rule: FillRule, items: &[&AppearanceItem], symbol: Symbols) -> Option<Vec<Arc<Node>>> {
     let b = path.bounds()?;
     let p = crate::lighting::drawing_params(&fx.id, &fx.params);
     let size = b.width().max(b.height());
@@ -213,13 +240,13 @@ fn art_for(n: &Node, fx: &Effect, path: &PathData, rule: FillRule, items: &[&App
         let mut strength: f64 = 0.0;
         for item in items {
             let (paint, opacity, blend) = paint_of(item);
-            let mut s = facets(ROTATE, &region(path, rule, item), b, &p).ok()?;
+            let mut s = facets(ROTATE, &region(path, rule, item), b, &p, &[]).ok()?;
             shadow.extend(s.shadow.take().into_iter().flat_map(|s| s.subpaths));
             if let Some((c, k)) = s.contact.take() {
                 contact.extend(c.subpaths);
                 strength = strength.max(k);
             }
-            out.push(Arc::new(surface(n, s, &paint, opacity, blend, crate::lighting::shading_side(&p))));
+            out.push(Arc::new(surface(n, s, &paint, opacity, blend, crate::lighting::shading_side(&p), &[])));
         }
         let shadow = (!shadow.is_empty()).then(|| PathData::new(shadow));
         let contact = (!contact.is_empty()).then(|| (PathData::new(contact), strength));
@@ -231,9 +258,11 @@ fn art_for(n: &Node, fx: &Effect, path: &PathData, rule: FillRule, items: &[&App
     let (paint, opacity, blend) = paint_of(item);
     // A loaded file or a shape edited past the limits keeps drawing its source path instead of
     // failing the frame; commands validate the same evaluator and report its errors.
-    let mut s = facets(&fx.id, path, b, &p).ok()?;
+    let pieces = crate::graphics::pieces(&crate::graphics::graphics(&p), symbol, path, rule, b);
+    let art: Vec<Vec<Vec<Point>>> = pieces.iter().map(|piece| piece.rings.clone()).collect();
+    let mut s = facets(&fx.id, path, b, &p, &art).ok()?;
     let mut all = crate::lighting::shadow_nodes(n, s.shadow.take(), s.contact.take(), &p, size);
-    all.push(Arc::new(surface(n, s, &paint, opacity, blend, crate::lighting::shading_side(&p))));
+    all.push(Arc::new(surface(n, s, &paint, opacity, blend, crate::lighting::shading_side(&p), &pieces)));
     Some(all)
 }
 
@@ -241,16 +270,44 @@ fn geometry(path: &PathData, fx: &[Effect], ctx: &GeomContext) -> PathData {
     apply_geometry_with(fx, path, path.bounds().unwrap_or(Rect::ZERO), ctx)
 }
 
+/// Where a 3D effect finds the art of a symbol its graphics name.
+type Symbols<'a> = &'a dyn Fn(&str) -> Option<Arc<Node>>;
+
 /// `n` drawn with its Extrude & Bevel, Inflate or Rotate effect: a group of shaded faces keeping
 /// the object's id and transparency, the source path untouched. `None` without such an effect.
+/// Graphics need their symbols ([`solid_art_in`]); without them the surface is drawn bare.
 pub fn solid_art(n: &Node) -> Option<Node> {
+    solid_art_in(n, None)
+}
+
+/// [`solid_art`], the symbols its graphics name from `doc`.
+pub fn solid_art_in(n: &Node, doc: Option<&Document>) -> Option<Node> {
     if !has_solid(n) {
         return None;
     }
-    crate::memo::remember(2, n, || evaluate(n))
+    // At its natural size: symbols made in the app keep their art in a small square and their
+    // size as drawn apart.
+    let symbol = |name: &str| {
+        let doc = doc?;
+        let art = &doc.symbols.iter().find(|s| s.name == name)?.art;
+        let xf = doc.symbol_natural_xf(name);
+        if xf == vectorcraft_geom::Affine::IDENTITY {
+            return Some(art.clone());
+        }
+        let mut sized = (**art).clone();
+        sized.transform(xf, true);
+        Some(Arc::new(sized))
+    };
+    // The symbols drawn, for the memo: an edited symbol draws anew.
+    let mut used: Vec<Arc<Node>> = vec![];
+    let fx = n.appearance.effects.iter().chain(n.appearance.items.iter().flat_map(|i| i.effects().iter()));
+    for e in fx.filter(|e| e.visible && SOLIDS.contains(&e.id.as_str())) {
+        used.extend(crate::graphics::graphics(&e.params).iter().filter_map(|g| symbol(&g.symbol)));
+    }
+    crate::memo::remember_with(2, n, &used, || evaluate(n, &symbol))
 }
 
-fn evaluate(n: &Node) -> Option<Node> {
+fn evaluate(n: &Node, symbol: Symbols) -> Option<Node> {
     let (path, rule) = profile(n)?;
     let ctx = GeomContext::of(n);
     let painted: Vec<&AppearanceItem> = n.appearance.items.iter().filter(|i| crate::paints(i)).collect();
@@ -258,7 +315,7 @@ fn evaluate(n: &Node) -> Option<Node> {
     let remaining: Vec<Effect>;
     if let Some((index, fx)) = solid(&n.appearance.effects) {
         let path = geometry(&path, n.appearance.effects.get(..index)?, &ctx);
-        children.extend(art_for(n, fx, &path, rule, &painted)?);
+        children.extend(art_for(n, fx, &path, rule, &painted, symbol)?);
         // Later geometry effects act on the projected art as a whole.
         remaining = n
             .appearance
@@ -274,7 +331,7 @@ fn evaluate(n: &Node) -> Option<Node> {
         for item in &painted {
             if let Some((index, fx)) = solid(item.effects()) {
                 let p = geometry(&path, item.effects().get(..index)?, &ctx.item(item));
-                for mut art in art_for(n, fx, &p, rule, &[*item])? {
+                for mut art in art_for(n, fx, &p, rule, &[*item], symbol)? {
                     Arc::make_mut(&mut art).appearance.effects =
                         item.effects().iter().skip(index + 1).filter(|e| !is_three_d(&e.id)).cloned().collect();
                     children.push(art);

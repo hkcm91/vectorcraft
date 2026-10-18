@@ -1,6 +1,6 @@
 # Effects parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-16 · **Change:** patch (3D: a draft live preview while dragging; 3D and Materials: procedural reflections (studio, outdoor, sunset, dark), ambient occlusion and contact shadows, gradients and patterns shaded per pixel, ~40% → ~42% (estimated); materials, lighting and material presets, smooth shading, ~32% → ~40% (estimated); coloured, soft lights and cast shadows, ~25% → ~32%; raster effects after a pattern, radial or freeform gradient fill export at their place and size, #1536; score unchanged; 3D and Materials on outlined type and other shapes of many small curves, #1481; Twist 0° to 360°, #1524; twisted walls keep their faces, #1525; score unchanged; 3D and Materials: Inflate takes Twist, Taper and Cap; score unchanged) · **Target:** Adobe Illustrator 2026 (30.x)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-18 · **Change:** minor (3D and Materials: Revolve caps and graphics on surfaces, ~42% → ~45%, 14–28 → 11–23 h; 3D: a draft live preview while dragging; 3D and Materials: procedural reflections (studio, outdoor, sunset, dark), ambient occlusion and contact shadows, gradients and patterns shaded per pixel, ~40% → ~42% (estimated); materials, lighting and material presets, smooth shading, ~32% → ~40% (estimated); coloured, soft lights and cast shadows, ~25% → ~32%; raster effects after a pattern, radial or freeform gradient fill export at their place and size, #1536; score unchanged; 3D and Materials on outlined type and other shapes of many small curves, #1481; Twist 0° to 360°, #1524; twisted walls keep their faces, #1525; score unchanged; 3D and Materials: Inflate takes Twist, Taper and Cap; score unchanged) · **Target:** Adobe Illustrator 2026 (30.x)
 
 Every entry of Illustrator's Effect menu, by its public feature name, against VectorCraft's effects catalogue
 (`effect_catalog()` in `crates/effects/src/lib.rs`) and the Effect menu built from it
@@ -13,7 +13,7 @@ Part of [target-app-parity.md](target-app-parity.md); open work is in [gaps.md](
 |---|---:|---:|---:|---:|
 | Illustrator effects (vector and stylize) | 50 | 44 | 88% | 6–10 |
 | Photoshop effects (raster, Effect Gallery) | 57 | 29 | 51% | 23–39 |
-| 3D and Materials | 4 (+3 Classic) | 4 (initial: Extrude & Bevel, Revolve, Inflate, Rotate; lights, shadows, materials, presets, smooth shading, reflections, ambient occlusion, contact shadows) | ~42% | 14–28 |
+| 3D and Materials | 4 (+3 Classic) | 4 (initial: Extrude & Bevel, Revolve, Inflate, Rotate; lights, shadows, materials, presets, smooth shading, reflections, ambient occlusion, contact shadows, Revolve caps, graphics on the front) | ~45% | 11–23 |
 | Beyond Illustrator: Effect › Color Adjustments (6), effect plug-ins (WebAssembly) | — | 6 + plug-ins | — | — |
 
 ## Illustrator effects
@@ -84,21 +84,22 @@ not an accuracy guarantee for arbitrary artwork. Tests: `pixel::tests::film_grai
 
 | Item | Ours |
 |---|---|
-| Revolve | initial: live, editable profile, rotation and light gizmos, flat shading, SVG/PDF output, Expand Appearance ([revolve.md](revolve.md), #846) |
+| Revolve | initial: live, editable profile, solid or hollow caps, rotation and light gizmos, SVG/PDF output, Expand Appearance ([revolve.md](revolve.md), #846) |
 | Extrude & Bevel, Inflate, Rotate | initial: live, depth, twist, taper, solid or hollow caps, five original bevel shapes, Inflate volume, both sides, twist, taper and cap, Rotate of every fill and stroke, Position presets, rotation and light gizmos, SVG/PDF output, Expand Appearance ([three-d.md](three-d.md)) |
-| Materials panel, lighting, ray-traced render | lighting: up to four directional lights with colour, intensity and softness, ambient colour, seven presets; shadows below or behind the object; our own materials (highlight, roughness, metallic, rim light, cel bands) with eight presets and smooth (gradient) shading ([three-d.md](three-d.md#materials)); no Substance materials, textures, mapped graphics or ray tracing |
+| Materials panel, lighting, ray-traced render | lighting: up to four directional lights with colour, intensity and softness, ambient colour, seven presets; shadows below or behind the object; our own materials (highlight, roughness, metallic, rim light, cel bands) with eight presets and smooth (gradient) shading ([three-d.md](three-d.md#materials)); graphics: the document's symbols laid on the front of Extrude & Bevel and Inflate, shaded with it; no Substance materials, textures, graphics on other surfaces or ray tracing |
 | 3D (Classic): Extrude & Bevel, Revolve, Rotate | none |
 | Turntable (30.0 beta) | none |
 | Export 3D objects (OBJ, USDA, glTF) | none |
 
 The `three-d` crate (depends only on `geom`) builds, rotates, projects, shades and depth-sorts the surfaces;
-the effects crate turns them into art. What's left (Substance materials and textures, mapped graphics, ray-traced rendering,
-Revolve caps, 3D Classic, Turntable, 3D export) is 15–30 h.
+the effects crate turns them into art. What's left (Substance materials and textures, graphics on sides, bevels and revolved surfaces,
+ray-traced rendering, 3D Classic, Turntable, 3D export) is 11–23 h.
 
 ## Revision history
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-18 | minor | 3D and Materials: Revolve's Cap (solid for new effects) and symbols laid on the front of Extrude & Bevel and Inflate ([three-d.md](three-d.md#materials)); ~42% → ~45%, 14–28 → 11–23 h |
 | 2026-10-13 | minor | Raster effects (blur, shadow, glow, grain) drawn after a pattern, radial or freeform gradient fill export at their place and size (#1541, fixes #1536); scores unchanged (estimated) |
 | 2026-10-16 | patch | 3D and Materials: a draft live preview while a value is dragged (about 6× faster), and each 3D art shaded once per change; score unchanged |
 | 2026-10-15 | minor | 3D and Materials: procedural reflections (studio, outdoor, sunset, dark), ambient occlusion and contact shadows, gradients and patterns shaded per pixel ([three-d.md](three-d.md#materials)); ~40% → ~42%, 15–30 → 14–28 h (estimated) |

@@ -1,7 +1,8 @@
 //! Portable 3D effect geometry: Revolve, Extrude & Bevel, Inflate and Rotate. No windowing, GPU or
 //! document dependencies.
 //!
-//! Open profiles generate uncapped surfaces. Faces are projected and sorted back to front,
+//! A capped Revolve closes an open profile against its axis and fills the cut ends of a partial
+//! turn, so it reads as a solid; uncapped, it is a thin shell. Faces are projected and sorted back to front,
 //! then flat shaded. This vector preview uses a painter's algorithm, not a depth buffer:
 //! intersecting profiles can have ambiguous visibility and are not solid modelling inputs.
 #![forbid(unsafe_code)]
@@ -13,7 +14,10 @@ mod solid;
 mod visibility;
 pub use lighting::{Environment, Light, MAX_EXTRA_LIGHTS, MAX_SHADING_STEPS, Material, Shade, ShadowDirection, ShadowPosition};
 pub use raster::{DRAFT_SIDE, MAX_SIDE, ShadedImage, Shading};
-pub use solid::{Bevel, BevelShape, Extrude, Facet, Inflate, Shaded, View, extrude, extrude_lit, inflate, inflate_lit, plane, plane_lit};
+pub use solid::{
+    Bevel, BevelShape, Extrude, Facet, Inflate, Mapped, Shaded, View, extrude, extrude_lit, extrude_mapped, inflate, inflate_lit, inflate_mapped,
+    plane, plane_lit, plane_mapped,
+};
 pub use visibility::{VisibleFace, visible_faces};
 
 use vectorcraft_geom::{BezPath, ParamCurve, PathData, Point, Rect};
@@ -79,6 +83,9 @@ pub struct Revolve {
     pub shadow_direction: ShadowDirection,
     /// How the surface takes the light.
     pub material: Material,
+    /// Solid: an open profile is closed against the axis (discs where its ends turn) and a
+    /// partial turn's cut ends are filled. Hollow (false): a thin shell.
+    pub cap: bool,
 }
 
 impl Default for Revolve {
@@ -105,6 +112,7 @@ impl Default for Revolve {
             shadow_distance: 0.0,
             shadow_direction: ShadowDirection::Light,
             material: Material::default(),
+            cap: false,
         }
     }
 }
@@ -314,6 +322,14 @@ pub fn revolve_lit(path: &PathData, bounds: Rect, options: Revolve) -> Result<Re
         let factor = distance / (distance - v.2 * o.perspective);
         Point::new(axis + v.0 * factor, center_y + v.1 * factor)
     };
+    let vertex = |p: Point, step: usize| {
+        let (s, c) = (sweep * step as f64 / steps as f64).sin_cos();
+        o.rotate(V3((p.x - axis) * c, p.y - center_y, (p.x - axis) * s))
+    };
+    // Points this close to the axis are on it.
+    let on_axis = 1e-9 * radius.max(bounds.height().abs()).max(1.0);
+    // A partial turn's cut ends, filled when capped.
+    let cut = o.cap && sweep > 1e-9 && o.angle < 360.0;
     let mut faces = Vec::new();
     // With smooth shading, each face's corners and shading normal.
     let mut smooth: Vec<(Vec<Vec<V3>>, V3)> = Vec::new();
@@ -343,59 +359,78 @@ pub fn revolve_lit(path: &PathData, bounds: Rect, options: Revolve) -> Result<Re
                 }
             }
         }
+        // Capped, an open profile runs on to the axis and back along it, so the ends it sweeps
+        // are discs and the cut ends are the region between the profile and the axis.
+        if o.cap
+            && !sp.closed
+            && let (Some(&first), Some(&last)) = (profile.first(), profile.last())
+        {
+            for p in [Point::new(axis, last.y), Point::new(axis, first.y), first] {
+                if profile.last().is_some_and(|q| (q.x - p.x).abs() > on_axis || (q.y - p.y).abs() > on_axis) {
+                    profile.push(p);
+                }
+            }
+        }
+        let mut quads: Vec<Vec<V3>> = Vec::new();
         for pair in profile.windows(2) {
             let [a, b] = pair else { continue };
             if ![a.x, a.y, b.x, b.y].iter().all(|v| v.is_finite() && v.abs() <= 1e8) {
                 return Err("Revolve profile contains invalid coordinates".into());
             }
             for j in 0..steps {
-                let vertex = |p: Point, step: usize| {
-                    let (s, c) = (sweep * step as f64 / steps as f64).sin_cos();
-                    o.rotate(V3((p.x - axis) * c, p.y - center_y, (p.x - axis) * s))
-                };
-                let vertices = [vertex(*a, j), vertex(*b, j), vertex(*b, j + 1), vertex(*a, j + 1)];
-                // The diagonal gives a nonzero normal even when one profile endpoint is on-axis.
-                let mut normal = vertices[1].sub(vertices[0]).cross(vertices[2].sub(vertices[0])).unit();
-                if normal.dot(normal) < 0.5 {
-                    normal = vertices[2].sub(vertices[0]).cross(vertices[3].sub(vertices[0])).unit();
+                quads.push(vec![vertex(*a, j), vertex(*b, j), vertex(*b, j + 1), vertex(*a, j + 1)]);
+            }
+        }
+        if cut && profile.len() >= 3 {
+            // The closing point repeats the first.
+            let ring = match (profile.first(), profile.last()) {
+                (Some(f), Some(l)) if f.distance(*l) <= on_axis => profile.get(..profile.len() - 1).unwrap_or_default(),
+                _ => profile.as_slice(),
+            };
+            for step in [0, steps] {
+                quads.push(ring.iter().map(|p| vertex(*p, step)).collect());
+            }
+        }
+        for vertices in quads {
+            let mut normal = match vertices.as_slice() {
+                [v0, v1, v2, v3] => {
+                    // The diagonal gives a nonzero normal even when one profile endpoint is on-axis.
+                    let n = v1.sub(*v0).cross(v2.sub(*v0)).unit();
+                    if n.dot(n) < 0.5 { v2.sub(*v0).cross(v3.sub(*v0)).unit() } else { n }
                 }
-                if normal.dot(normal) < 0.5 {
-                    continue;
-                }
-                if o.shadow != ShadowPosition::None {
-                    casters.push(vec![vertices.to_vec()]);
-                }
-                // Profiles may run up or down. Shade the visible side of this two-sided surface.
-                if normal.2 < 0.0 {
-                    normal = V3(-normal.0, -normal.1, -normal.2);
-                }
-                let shade = rig.shade(normal);
-                let points: Vec<_> = vertices.iter().map(|v| project(*v)).collect();
-                if points.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
-                    return Err("Revolve projection is not finite".into());
-                }
-                let area = points
-                    .iter()
-                    .zip(points.iter().cycle().skip(1))
-                    .take(4)
-                    .map(|(a, b)| (a.x - axis) * (b.y - center_y) - (b.x - axis) * (a.y - center_y))
-                    .sum::<f64>();
-                if area.abs() < 1e-10 {
-                    continue;
-                }
-                if rig.smooth() {
-                    smooth.push((vec![vertices.to_vec()], normal));
-                }
-                faces.push(Face {
-                    points,
-                    depth: vertices.iter().map(|v| v.2).sum::<f64>() / 4.0,
-                    brightness: mean(shade.tint).min(1.0),
-                    tint: shade.tint,
-                    highlight: shade.highlight,
-                });
-                if faces.len() > MAX_FACES {
-                    return Err("Revolve surface is too complex; reduce Segments or simplify the profile".into());
-                }
+                _ => solid::newell(std::slice::from_ref(&vertices)).unit(),
+            };
+            if normal.dot(normal) < 0.5 {
+                continue;
+            }
+            if o.shadow != ShadowPosition::None {
+                casters.push(vec![vertices.clone()]);
+            }
+            // Profiles may run up or down. Shade the visible side of this two-sided surface.
+            if normal.2 < 0.0 {
+                normal = V3(-normal.0, -normal.1, -normal.2);
+            }
+            let shade = rig.shade(normal);
+            let points: Vec<_> = vertices.iter().map(|v| project(*v)).collect();
+            if points.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
+                return Err("Revolve projection is not finite".into());
+            }
+            let area = points
+                .iter()
+                .zip(points.iter().cycle().skip(1))
+                .take(points.len())
+                .map(|(a, b)| (a.x - axis) * (b.y - center_y) - (b.x - axis) * (a.y - center_y))
+                .sum::<f64>();
+            if area.abs() < 1e-10 {
+                continue;
+            }
+            let depth = vertices.iter().map(|v| v.2).sum::<f64>() / vertices.len() as f64;
+            if rig.smooth() {
+                smooth.push((vec![vertices], normal));
+            }
+            faces.push(Face { points, depth, brightness: mean(shade.tint).min(1.0), tint: shade.tint, highlight: shade.highlight });
+            if faces.len() > MAX_FACES {
+                return Err("Revolve surface is too complex; reduce Segments or simplify the profile".into());
             }
         }
     }
@@ -517,6 +552,56 @@ mod tests {
             assert_ne!(base, revolve(&p, b, o).unwrap());
         }
         assert!(revolve(&p, b, Revolve { angle: 0.0, ..Default::default() }).unwrap().is_empty());
+    }
+    fn inside(points: &[Point], p: Point) -> bool {
+        let mut inside = false;
+        for (a, b) in points.iter().zip(points.iter().cycle().skip(1)).take(points.len()) {
+            if (a.y > p.y) != (b.y > p.y) && p.x < a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x) {
+                inside = !inside;
+            }
+        }
+        inside
+    }
+    #[test]
+    fn a_capped_open_profile_is_closed_with_discs_where_its_ends_turn() {
+        // A tube 20 points off the axis, seen from above: hollow, the axis shows through.
+        let (p, b) = cylinder();
+        let top = Revolve { offset: 20.0, rotation_x: -80.0, ..Default::default() };
+        let axis_top = |faces: &[Face]| {
+            let axis = top.projected_axis(b)[0];
+            faces.iter().any(|f| inside(&f.points, axis))
+        };
+        let hollow = revolve(&p, b, top).unwrap();
+        assert!(!axis_top(&hollow), "an uncapped tube is open at the top");
+        let solid = revolve(&p, b, Revolve { cap: true, ..top }).unwrap();
+        assert!(axis_top(&solid), "a capped tube has a lid");
+        assert!(solid.len() > hollow.len());
+        // A full turn has no cut ends: every face is a quad.
+        assert!(solid.iter().all(|f| f.points.len() == 4));
+    }
+    #[test]
+    fn a_capped_partial_turn_fills_its_cut_ends_with_the_profile() {
+        let (p, b) = cylinder();
+        let half = Revolve { angle: 180.0, offset: 20.0, rotation_y: 30.0, rotation_x: -20.0, ..Default::default() };
+        let hollow = revolve(&p, b, half).unwrap();
+        assert!(hollow.iter().all(|f| f.points.len() == 4));
+        let solid = revolve(&p, b, Revolve { cap: true, ..half }).unwrap();
+        // Half a turn is 32 steps: a disc of 32 pieces at each end of the profile and the two
+        // cut ends (the profile closed against the axis, a rectangle).
+        assert_eq!(solid.len(), hollow.len() + 2 * 32 + 2);
+        // A closed profile's cut ends are the profile itself.
+        let mut bp = BezPath::new();
+        bp.move_to((20.0, 20.0));
+        bp.line_to((40.0, 20.0));
+        bp.line_to((30.0, 60.0));
+        bp.close_path();
+        let triangle = PathData::from_bezpath(&bp);
+        let tb = Rect::new(20.0, 20.0, 40.0, 60.0);
+        let faces = revolve(&triangle, tb, Revolve { cap: true, ..half }).unwrap();
+        assert_eq!(faces.iter().filter(|f| f.points.len() == 3).count(), 2, "two triangular cut ends");
+        assert!(revolve(&triangle, tb, half).unwrap().iter().all(|f| f.points.len() == 4));
+        // Nothing turned, nothing drawn, capped or not.
+        assert!(revolve(&p, b, Revolve { angle: 0.0, cap: true, ..Default::default() }).unwrap().is_empty());
     }
     #[test]
     fn malformed_and_degenerate_inputs_are_bounded() {

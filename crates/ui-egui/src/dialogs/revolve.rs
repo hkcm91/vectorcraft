@@ -95,6 +95,7 @@ fn controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
         }
     });
     number(ui, d, "offset", tl!("Offset"), (0.0, 100000.0), "", 1, Some(unit));
+    choice(ui, d, "cap", c3("Cap"), &[(json!(true), c3("Solid")), (json!(false), c3("Hollow"))]);
     ui.add_space(10.0);
     heading(ui, tl!("View"));
     for (key, name) in [("rotationX", tl!("Rotation X")), ("rotationY", tl!("Rotation Y")), ("rotationZ", tl!("Rotation Z"))] {
@@ -165,6 +166,9 @@ fn solid_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog, id: &
         lighting_controls(ui, d, app.session.general_unit());
     } else if d.str("__tab") == "material" {
         material_controls(ui, d);
+        if object {
+            graphics_controls(app, ui, d);
+        }
     } else if object && d.str("__tab") != "rotation" {
         let unit = app.session.general_unit();
         if id == EXTRUDE {
@@ -470,6 +474,70 @@ fn extra_lights(ui: &mut egui::Ui, d: &mut Dialog) {
     }
     if changed {
         d.fields.insert("lights".into(), Value::Array(lights));
+    }
+}
+
+/// The graphics laid on the front (`graphics`, up to eight): each a symbol of the document with
+/// its place across and down the object, its scale and its turn, and a button to delete it; Add
+/// Graphic below (the first symbol, in the middle).
+fn graphics_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
+    let names: Vec<String> = app.session.active().map(|doc| doc.doc.symbols.iter().map(|s| s.name.clone()).collect()).unwrap_or_default();
+    let mut graphics: Vec<Value> = d.fields.get("graphics").and_then(Value::as_array).cloned().unwrap_or_default();
+    ui.add_space(8.0);
+    heading(ui, tl!("Graphics"));
+    if names.is_empty() && graphics.is_empty() {
+        let t = Tokens::get(ui.ctx());
+        ui.label(egui::RichText::new(tl!("Make a symbol to lay it on the surface.")).color(t.text_dim));
+        return;
+    }
+    let options: Vec<&str> = names.iter().map(String::as_str).collect();
+    let mut changed = false;
+    let mut delete = None;
+    for (i, g) in graphics.iter_mut().enumerate() {
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            let current = g.get("symbol").and_then(Value::as_str).unwrap_or_default().to_string();
+            let width = VALUE_W + rail_width(ui) + 6.0;
+            if let Some(k) = widgets::dropdown_names(ui, ("three-d-graphic", i), &current, &options, width)
+                && let Some(name) = options.get(k)
+            {
+                g["symbol"] = json!(name);
+                changed = true;
+            }
+            if widgets::icon_button(ui, "trash-2", tl!("Delete Graphic"), false, 22.0).clicked() {
+                delete = Some(i);
+            }
+        });
+        for (key, name, lo, hi, default, suffix) in [
+            ("x", tl!("Horizontal"), -100.0, 200.0, 50.0, "%"),
+            ("y", tl!("Vertical"), -100.0, 200.0, 50.0, "%"),
+            ("scale", tl!("Scale"), 1.0, 1000.0, 100.0, "%"),
+            ("rotation", tl!("Rotation"), -360.0, 360.0, 0.0, "°"),
+        ] {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                label(ui, name);
+                let v = g.get(key).and_then(Value::as_f64).unwrap_or(default);
+                if let Some(n) = widgets::range_field(ui, ("three-d-graphic", i, key), v, lo..=hi, suffix, 1, VALUE_W) {
+                    g[key] = json!(n);
+                    changed = true;
+                }
+            });
+        }
+    }
+    if let Some(i) = delete {
+        graphics.remove(i);
+        changed = true;
+    }
+    if let Some(first) = names.first()
+        && graphics.len() < vectorcraft_effects::graphics::MAX_GRAPHICS
+        && widgets::flat_button(ui, tl!("Add Graphic"), 110.0).clicked()
+    {
+        graphics.push(json!({"symbol": first, "x": 50.0, "y": 50.0, "scale": 100.0, "rotation": 0.0}));
+        changed = true;
+    }
+    if changed {
+        d.fields.insert("graphics".into(), Value::Array(graphics));
     }
 }
 

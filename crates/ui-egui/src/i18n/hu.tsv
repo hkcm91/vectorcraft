@@ -4763,6 +4763,9 @@ imageTrace	Outline	Körvonal
 	Distance	Távolság
 	Delete Light	Fény törlése
 	Add Light	Fény hozzáadása
+	Add Graphic	Grafika hozzáadása
+	Delete Graphic	Grafika törlése
+	Make a symbol to lay it on the surface.	Hozzon létre egy szimbólumot, hogy a felületre helyezhesse.
 	More Lights	További fények
 # 3D materials and lighting presets.
 	Material	Anyag
