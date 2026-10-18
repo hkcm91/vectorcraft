@@ -49,12 +49,8 @@ fn complete(art: &Node) -> bool {
     ok
 }
 
-/// `make()`'s art for `n` (of kind `kind`: each evaluator its own), remembered by `n`'s content.
-pub(crate) fn remember(kind: u8, n: &Node, make: impl FnOnce() -> Option<Node>) -> Option<Node> {
-    remember_with(kind, n, &[], make)
-}
-
-/// [`remember`], the art also depending on `extra`.
+/// `make()`'s art for `n` (of kind `kind`: each evaluator its own), remembered by `n`'s content and the
+/// art it draws from elsewhere (`extra`).
 pub(crate) fn remember_with(kind: u8, n: &Node, extra: &[Arc<Node>], make: impl FnOnce() -> Option<Node>) -> Option<Node> {
     let Some(k) = key(kind, n, extra) else { return make() };
     let lock = || MEMO.lock().unwrap_or_else(|e| e.into_inner());
@@ -91,7 +87,7 @@ mod tests {
         let source = Node::group(NodeId(9), vec![]);
         let mut made = 0;
         for _ in 0..3 {
-            remember(7, &source, || {
+            remember_with(7, &source, &[], || {
                 made += 1;
                 Some(showing(key.clone()))
             });
@@ -101,7 +97,7 @@ mod tests {
         assert!(!complete(&showing(format!("{}0000", vectorcraft_doc::generated::PREFIX))));
         assert!(complete(&showing(key)));
         // Another kind of art of the same object is its own.
-        remember(8, &source, || {
+        remember_with(8, &source, &[], || {
             made += 1;
             None
         });

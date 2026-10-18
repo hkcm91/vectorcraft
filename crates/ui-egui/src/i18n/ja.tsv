@@ -4292,6 +4292,7 @@ lighting	Light	ライト
 3d	Cap	キャップ
 3d	Solid	ソリッド
 3d	Hollow	中空
+3d	Surface	表面
 3d	Bevel	ベベル
 3d	Rounded	丸み
 3d	Space	間隔
@@ -4364,6 +4365,7 @@ lighting	Light	ライト
 	Delete Light	ライトを削除
 	Add Light	ライトを追加
 	Add Graphic	グラフィックを追加
+	Finish	仕上げ
 	Delete Graphic	グラフィックを削除
 	Make a symbol to lay it on the surface.	シンボルを作成すると、表面に配置できます。
 	More Lights	その他のライト

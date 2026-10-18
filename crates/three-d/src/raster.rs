@@ -188,6 +188,11 @@ impl Shading {
         &self.polys
     }
 
+    /// The same surface on a matte finish ([`Rig::matte`]): what art printed on it shows.
+    pub fn matte(&self) -> Self {
+        Self { rig: self.rig.matte(), reach: self.reach, polys: self.polys.clone() }
+    }
+
     pub(crate) fn new(rig: Rig, reach: f64, polys: Vec<Poly>) -> Self {
         Self { rig, reach, polys }
     }

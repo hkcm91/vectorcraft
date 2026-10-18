@@ -4294,6 +4294,7 @@ lighting	Light	Свет
 3d	Cap	Торцы
 3d	Solid	Сплошной
 3d	Hollow	Полый
+3d	Surface	Поверхность
 3d	Bevel	Фаска
 3d	Rounded	Скруглённый
 3d	Space	Интервал
@@ -4366,6 +4367,7 @@ lighting	Light	Свет
 	Delete Light	Удалить свет
 	Add Light	Добавить свет
 	Add Graphic	Добавить графику
+	Finish	Отделка
 	Delete Graphic	Удалить графику
 	Make a symbol to lay it on the surface.	Создайте символ, чтобы нанести его на поверхность.
 	More Lights	Дополнительный свет

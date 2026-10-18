@@ -76,6 +76,7 @@ fn controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
     }
     if d.str("__tab") == "material" {
         material_controls(ui, d);
+        graphics_controls(app, ui, d);
         return;
     }
     let unit = app.session.general_unit();
@@ -166,9 +167,7 @@ fn solid_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog, id: &
         lighting_controls(ui, d, app.session.general_unit());
     } else if d.str("__tab") == "material" {
         material_controls(ui, d);
-        if object {
-            graphics_controls(app, ui, d);
-        }
+        graphics_controls(app, ui, d);
     } else if object && d.str("__tab") != "rotation" {
         let unit = app.session.general_unit();
         if id == EXTRUDE {
@@ -477,9 +476,9 @@ fn extra_lights(ui: &mut egui::Ui, d: &mut Dialog) {
     }
 }
 
-/// The graphics laid on the front (`graphics`, up to eight): each a symbol of the document with
-/// its place across and down the object, its scale and its turn, and a button to delete it; Add
-/// Graphic below (the first symbol, in the middle).
+/// The graphics laid on the surface (`graphics`, up to eight): each a symbol of the document with
+/// its place across and down the object (round a Revolve, across is the way round), its scale,
+/// turn and finish, and a button to delete it; Add Graphic below (the first symbol, in the middle).
 fn graphics_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
     let names: Vec<String> = app.session.active().map(|doc| doc.doc.symbols.iter().map(|s| s.name.clone()).collect()).unwrap_or_default();
     let mut graphics: Vec<Value> = d.fields.get("graphics").and_then(Value::as_array).cloned().unwrap_or_default();
@@ -508,6 +507,18 @@ fn graphics_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
                 delete = Some(i);
             }
         });
+        // Matte keeps a logo as printed; Surface takes the surface's gloss or metal.
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            label(ui, tl!("Finish"));
+            let surface = g.get("finish").and_then(Value::as_str) == Some("surface");
+            let current = if surface { c3("Surface") } else { c3("Matte") };
+            let width = VALUE_W + rail_width(ui) + 6.0;
+            if let Some(k) = widgets::dropdown(ui, ("three-d-graphic-finish", i), current, &[c3("Matte"), c3("Surface")], width) {
+                g["finish"] = json!(if k == 0 { "matte" } else { "surface" });
+                changed = true;
+            }
+        });
         for (key, name, lo, hi, default, suffix) in [
             ("x", tl!("Horizontal"), -100.0, 200.0, 50.0, "%"),
             ("y", tl!("Vertical"), -100.0, 200.0, 50.0, "%"),
@@ -533,7 +544,7 @@ fn graphics_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
         && graphics.len() < vectorcraft_effects::graphics::MAX_GRAPHICS
         && widgets::flat_button(ui, tl!("Add Graphic"), 110.0).clicked()
     {
-        graphics.push(json!({"symbol": first, "x": 50.0, "y": 50.0, "scale": 100.0, "rotation": 0.0}));
+        graphics.push(json!({"symbol": first, "x": 50.0, "y": 50.0, "scale": 100.0, "rotation": 0.0, "finish": "matte"}));
         changed = true;
     }
     if changed {

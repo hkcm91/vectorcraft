@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use vectorcraft_doc::color::Paint;
-use vectorcraft_doc::{Appearance, AppearanceItem, Effect, FillLayer, Node, NodeKind, StrokeLayer};
-use vectorcraft_geom::{PathData, Rect};
+use vectorcraft_doc::{Appearance, AppearanceItem, Document, Effect, FillLayer, Node, NodeKind, StrokeLayer};
+use vectorcraft_geom::{FillRule, PathData, Point, Rect};
 use vectorcraft_three_d::{Edge, Revolve};
 
 use crate::util::{flag, num, text};
@@ -54,6 +54,7 @@ pub fn validate_revolve(n: &Node, p: &Value) -> Result<(), String> {
         return Err("Revolve edge must be left or right".into());
     }
     crate::lighting::validate(p)?;
+    crate::graphics::validate(p)?;
     vectorcraft_three_d::revolve(&path, b, revolve_options(p)).map(|_| ())
 }
 
@@ -80,22 +81,28 @@ fn surface(
     opacity: f32,
     blend: vectorcraft_doc::color::BlendMode,
     expand: bool,
+    symbol: Symbols,
 ) -> Option<Node> {
     let b = path.bounds()?;
     // A loaded file or a profile edited past the limits keeps drawing its source path instead
     // of crashing the frame. Commands validate the same evaluator and report its errors.
     let params = crate::lighting::drawing_params(REVOLVE, &fx.params);
-    let vectorcraft_three_d::Revolved { faces, shadow, shading, contact } =
-        vectorcraft_three_d::revolve_lit(path, b, revolve_options(&params)).ok()?;
+    let options = revolve_options(&params);
+    let pieces = labels(&params, symbol, b, options);
+    let art: Vec<Vec<Vec<Point>>> = pieces.iter().map(|piece| piece.rings.clone()).collect();
+    let vectorcraft_three_d::Revolved { faces, shadow, shading, contact, mapped } =
+        vectorcraft_three_d::revolve_mapped(path, b, options, &art).ok()?;
     let shadow = crate::lighting::shadow_nodes(n, shadow, contact, &params, b.width().max(b.height()));
+    let longest = crate::lighting::shading_side(&params);
     // Smooth shading: the surface pixel by pixel.
-    if let Some(shading) = &shading
-        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, &paint, crate::lighting::shading_side(&params), vec![])
-    {
-        let mut group = Node::group(n.id, shadow.into_iter().chain([Arc::new(art)]).collect());
-        group.opacity = opacity;
-        group.blend = blend;
-        return Some(group);
+    if let Some(shading) = &shading {
+        let (under, top) = crate::graphics::laid(n.id, &mapped, &pieces, Some(shading), longest);
+        if let Some(art) = crate::lighting::shaded_surface(n.id, shading, &paint, longest, under) {
+            let mut group = Node::group(n.id, shadow.into_iter().chain([Arc::new(art)]).chain(top).collect());
+            group.opacity = opacity;
+            group.blend = blend;
+            return Some(group);
+        }
     }
     // Visibility is an expansion option, never a change to live geometry or export baking.
     // Keep all faces for paints whose coverage we cannot prove opaque. A bounded visibility
@@ -141,6 +148,8 @@ fn surface(
                 .collect();
             Arc::new(Node::path(n.id, face.path, Appearance { items, ..Default::default() }))
         }))
+        // Flat, each graphic takes the shade of the surface under its centre.
+        .chain(crate::graphics::laid(n.id, &mapped, &pieces, None, longest).1)
         .collect();
     let mut group = Node::group(n.id, children);
     group.opacity = opacity;
@@ -155,21 +164,52 @@ fn paint_of(item: &AppearanceItem) -> (Paint, f32, vectorcraft_doc::color::Blend
     }
 }
 
+/// Where Revolve finds the art of a symbol its graphics name.
+type Symbols<'a> = &'a dyn Fn(&str) -> Option<Arc<Node>>;
+
+/// The pieces of the graphics in `params` wrapped round a Revolve of profile bounds `b`: placed
+/// in a label as wide as the way round at [`vectorcraft_three_d::revolve_radius`] (50 % the
+/// front) and as tall as the profile, and clipped to the part of it the turn covers.
+fn labels(params: &Value, symbol: Symbols, b: Rect, options: Revolve) -> Vec<crate::graphics::Piece> {
+    let graphics = crate::graphics::graphics(params);
+    let r = vectorcraft_three_d::revolve_radius(b, options);
+    if graphics.is_empty() || r.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) || b.height() <= 0.0 {
+        return vec![];
+    }
+    let pi = std::f64::consts::PI;
+    let sweep = if options.angle.is_finite() { options.angle.clamp(0.0, 360.0).to_radians() } else { 2.0 * pi };
+    // The front is at 0; a partial turn starts a quarter turn to the right of it and runs back
+    // round to the left.
+    let (x0, x1) = if sweep >= 2.0 * pi - 1e-9 { (-pi * r, pi * r) } else { ((pi / 2.0 - sweep) * r, pi / 2.0 * r) };
+    let turned = PathData::single(vectorcraft_geom::SubPath::polyline(
+        &[Point::new(x0, b.y0), Point::new(x1, b.y0), Point::new(x1, b.y1), Point::new(x0, b.y1)],
+        true,
+    ));
+    crate::graphics::pieces(&graphics, symbol, &turned, FillRule::NonZero, Rect::new(-pi * r, b.y0, pi * r, b.y1))
+}
+
 /// Evaluated art keeps the source's identity and transparency. Each item's opacity belongs
 /// to its entire surface, not to each face, so overlapping faces don't accumulate alpha.
+/// Graphics need their symbols ([`revolve_art_in`]); without them the surface is drawn bare.
 pub fn revolve_art(n: &Node) -> Option<Node> {
+    revolve_art_in(n, None)
+}
+
+/// [`revolve_art`], the symbols its graphics name from `doc`.
+pub fn revolve_art_in(n: &Node, doc: Option<&Document>) -> Option<Node> {
     if !has_revolve(n) {
         return None;
     }
-    crate::memo::remember(1, n, || art(n, false))
+    let used = crate::graphics::used(n, &[REVOLVE], doc);
+    crate::memo::remember_with(1, n, &used, || art(n, false, &|name| crate::graphics::symbol_art(doc, name)))
 }
 
 /// Revolve's own Expand Appearance path. The shared command and UI remain unchanged.
-pub(crate) fn expand_revolve_art(n: &Node) -> Option<Node> {
-    art(n, true)
+pub(crate) fn expand_revolve_art(n: &Node, doc: Option<&Document>) -> Option<Node> {
+    art(n, true, &|name| crate::graphics::symbol_art(doc, name))
 }
 
-fn art(n: &Node, expand: bool) -> Option<Node> {
+fn art(n: &Node, expand: bool, symbol: Symbols) -> Option<Node> {
     if !has_revolve(n) {
         return None;
     }
@@ -190,7 +230,7 @@ fn art(n: &Node, expand: bool) -> Option<Node> {
             .or_else(|| n.appearance.items.iter().rev().find(|i| crate::paints(i)))?;
         let (paint, opacity, blend) = paint_of(item);
         let expand = expand && !n.appearance.effects.iter().skip(index + 1).any(|e| e.visible && is_geometry(&e.id));
-        children.push(Arc::new(surface(n, &path, fx, paint, opacity, blend, expand)?));
+        children.push(Arc::new(surface(n, &path, fx, paint, opacity, blend, expand, symbol)?));
         // Later geometry acts on the projected art as a whole through container evaluation.
         remaining = n
             .appearance
@@ -209,7 +249,7 @@ fn art(n: &Node, expand: bool) -> Option<Node> {
                 let p = geometry(&path, item.effects().get(..index)?, &ctx.item(item));
                 let (paint, opacity, blend) = paint_of(item);
                 let expand = expand && !item.effects().iter().skip(index + 1).any(|e| e.visible && is_geometry(&e.id));
-                let mut art = surface(n, &p, fx, paint, opacity, blend, expand)?;
+                let mut art = surface(n, &p, fx, paint, opacity, blend, expand, symbol)?;
                 art.appearance.effects = item.effects().iter().skip(index + 1).filter(|e| e.id != REVOLVE).cloned().collect();
                 children.push(Arc::new(art));
             } else {
@@ -297,20 +337,20 @@ mod tests {
         n.appearance.effects.push(fx());
         let source = n.path_data().unwrap().clone();
         let live = revolve_art(&n).unwrap();
-        let expanded = expand_revolve_art(&n).unwrap();
+        let expanded = expand_revolve_art(&n, None).unwrap();
         let count = |n: &Node| n.children().unwrap()[0].children().unwrap().len();
         assert!(count(&expanded) < count(&live) * 3 / 4, "hidden back surfaces are removed");
         assert_eq!(crate::bake_appearance(&n), Some(live.clone()), "other baking retains the full surface");
         n.appearance.effects[0].params["expandVisibleOnly"] = json!(false);
         assert_eq!(revolve_art(&n), Some(live.clone()), "the live view ignores the expansion setting");
-        assert_eq!(expand_revolve_art(&n), Some(live));
+        assert_eq!(expand_revolve_art(&n, None), Some(live));
         assert_eq!(n.path_data(), Some(&source));
         n.appearance.effects[0].params["expandVisibleOnly"] = json!(true);
-        assert_eq!(expand_revolve_art(&n), Some(expanded.clone()));
+        assert_eq!(expand_revolve_art(&n, None), Some(expanded.clone()));
         // Per-item Revolve uses the same option, without trimming another item's artwork.
         let effect = n.appearance.effects.remove(0);
         n.appearance.items[0].effects_mut().push(effect);
-        assert_eq!(expand_revolve_art(&n).unwrap().children().unwrap()[0], expanded.children().unwrap()[0]);
+        assert_eq!(expand_revolve_art(&n, None).unwrap().children().unwrap()[0], expanded.children().unwrap()[0]);
     }
 
     #[test]
@@ -331,6 +371,41 @@ mod tests {
         assert_eq!(faces(legacy.clone()), hollow, "saved without a cap: hollow, as drawn then");
         assert!(faces(solid.params) > hollow);
         assert_eq!(crate::drawing_params(REVOLVE, &legacy)["cap"], json!(false), "the dialog shows it hollow too");
+    }
+    #[test]
+    fn graphics_wrap_round_the_surface_like_a_label() {
+        // A 20 pt blue square as the symbol.
+        let mut b = BezPath::new();
+        b.move_to((0.0, 0.0));
+        b.line_to((20.0, 0.0));
+        b.line_to((20.0, 20.0));
+        b.line_to((0.0, 20.0));
+        b.close_path();
+        let logo = Node::path(NodeId(50), PathData::from_bezpath(&b), Appearance::basic(Paint::solid(Color::rgb(0.0, 0.0, 1.0)), Paint::None, 0.0));
+        let mut doc = Document::new(400.0, 400.0);
+        doc.symbols.push(vectorcraft_doc::Symbol { name: "Logo".into(), art: Arc::new(logo) });
+        let laid = |extra: Value| {
+            let mut n = profile_node();
+            let mut p = json!({"smoothShading": false, "graphics": [{"symbol": "Logo"}]});
+            p.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            n.appearance.effects.push(crate::new_effect(REVOLVE, &p).unwrap());
+            let bare = revolve_art(&n).unwrap().children().unwrap()[0].children().unwrap().len();
+            let art = revolve_art_in(&n, Some(&doc)).unwrap();
+            let pieces = art.children().unwrap()[0].children().unwrap().clone();
+            (pieces.len() - bare, pieces.last().and_then(|p| p.geometric_bounds()))
+        };
+        // At the front of a radius-30 surface, straight on: 2·30·sin(10/30) across, centred on
+        // the axis, at the profile's middle height.
+        let (count, b) = laid(json!({}));
+        let b = b.unwrap();
+        assert_eq!(count, 1);
+        assert!((b.width() - 60.0 * (10.0f64 / 30.0).sin()).abs() < 1e-6 && (b.center().x - 100.0).abs() < 1e-6, "{b:?}");
+        assert!((b.center().y - 100.0).abs() < 1e-6);
+        // At the back (0 %), hidden; a quarter turn ending at the front shows its right half only.
+        assert_eq!(laid(json!({"graphics": [{"symbol": "Logo", "x": 0}]})).0, 0);
+        let (count, half) = laid(json!({"angle": 90}));
+        assert_eq!(count, 1);
+        assert!((half.unwrap().x0 - 100.0).abs() < 1e-6, "{half:?}");
     }
     #[test]
     fn smooth_shading_draws_the_surface_pixel_by_pixel() {
@@ -362,12 +437,12 @@ mod tests {
                 2 => sample.blend = vectorcraft_doc::color::BlendMode::Multiply,
                 _ => sample.appearance.effects.push(crate::new_effect("distort.twist", &json!({"angle":45})).unwrap()),
             }
-            assert_eq!(expand_revolve_art(&sample), revolve_art(&sample), "preserve surface for case {change}");
+            assert_eq!(expand_revolve_art(&sample, None), revolve_art(&sample), "preserve surface for case {change}");
         }
         let mut sample = n;
         if let AppearanceItem::Fill(f) = &mut sample.appearance.items[0] {
             f.paint = Paint::Pattern { pattern: "unknown transparency".into(), xf: Affine::IDENTITY };
         }
-        assert_eq!(expand_revolve_art(&sample), revolve_art(&sample));
+        assert_eq!(expand_revolve_art(&sample, None), revolve_art(&sample));
     }
 }

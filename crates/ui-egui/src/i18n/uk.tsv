@@ -4278,6 +4278,7 @@ lighting	Light	Світло
 3d	Cap	Торці
 3d	Solid	Суцільний
 3d	Hollow	Порожнистий
+3d	Surface	Поверхня
 3d	Bevel	Фаска
 3d	Rounded	Заокруглений
 3d	Space	Інтервал
@@ -4350,6 +4351,7 @@ lighting	Light	Світло
 	Delete Light	Видалити світло
 	Add Light	Додати світло
 	Add Graphic	Додати графіку
+	Finish	Оздоблення
 	Delete Graphic	Видалити графіку
 	Make a symbol to lay it on the surface.	Створіть символ, щоб нанести його на поверхню.
 	More Lights	Додаткове світло

@@ -4729,6 +4729,7 @@ mark-style	Japanese	Japonské
 3d	Cap	Uzávěr
 3d	Solid	Plné
 3d	Hollow	Duté
+3d	Surface	Povrch
 3d	Bevel	Zkosení
 3d	Rounded	Zaoblené
 3d	Space	Mezera
@@ -4796,6 +4797,7 @@ mark-style	Japanese	Japonské
 	Delete Light	Odstranit světlo
 	Add Light	Přidat světlo
 	Add Graphic	Přidat grafiku
+	Finish	Povrchová úprava
 	Delete Graphic	Odstranit grafiku
 	Make a symbol to lay it on the surface.	Vytvořte symbol, abyste jej mohli umístit na povrch.
 	More Lights	Další světla

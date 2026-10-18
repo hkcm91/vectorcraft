@@ -315,6 +315,13 @@ impl Rig {
         self.on && self.material.smooth
     }
 
+    /// The same lights on a matte finish: no highlight, no metal, no rim light (cel bands and
+    /// occlusion kept), as art printed on the surface takes them.
+    pub(crate) fn matte(&self) -> Self {
+        let material = Material { specular: 0.0, metallic: 0.0, rim: 0.0, ..self.material };
+        Self { material, ..self.clone() }
+    }
+
     /// Does the material shade in cel bands?
     pub(crate) fn banded(&self) -> bool {
         self.material.steps >= 2

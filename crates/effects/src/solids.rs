@@ -140,34 +140,20 @@ pub fn validate_solid(n: &Node, id: &str, p: &Value) -> Result<(), String> {
     facets(id, &path, b, p, &[]).map(|_| ())
 }
 
-/// A piece of a graphic on the surface: `contours` (projected) filled with `paint`.
-fn mapped_node(n: &Node, contours: &[Vec<Point>], items: Vec<AppearanceItem>) -> Arc<Node> {
-    let path = PathData::new(contours.iter().map(|c| vectorcraft_geom::SubPath::polyline(c, true)).collect());
-    Arc::new(Node::path(n.id, path, Appearance { items, ..Default::default() }))
-}
-
-/// A fill of `paint` at `opacity`.
-fn fill(paint: Paint, opacity: f32) -> AppearanceItem {
-    let mut f = FillLayer::new(paint);
-    f.opacity = opacity;
-    AppearanceItem::Fill(f)
-}
-
 /// One surface as a group with the paint's opacity and blend mode (so overlapping facets don't
 /// add up their transparency): with smooth shading the surface pixel by pixel, otherwise each
 /// facet a path shaded from `paint`. `pieces` are the graphics laid on it ([`Shaded::mapped`]).
 fn surface(n: &Node, mut shaded: Shaded, paint: &Paint, opacity: f32, blend: BlendMode, longest: f64, pieces: &[crate::graphics::Piece]) -> Node {
     let mapped = std::mem::take(&mut shaded.mapped);
-    let laid = || mapped.iter().zip(pieces).filter(|(m, _)| !m.contours.is_empty());
-    // Pixel by pixel, the graphics go under the shading, which lights them with the surface.
-    let overlay: Vec<Arc<Node>> = laid().map(|(m, piece)| mapped_node(n, &m.contours, vec![fill(piece.paint.clone(), piece.opacity)])).collect();
-    if let Some(shading) = &shaded.shading
-        && let Some(art) = crate::lighting::shaded_surface(n.id, shading, paint, longest, overlay)
-    {
-        let mut group = Node::group(n.id, vec![Arc::new(art)]);
-        group.opacity = opacity;
-        group.blend = blend;
-        return group;
+    if let Some(shading) = &shaded.shading {
+        // Pixel by pixel, graphics in the surface's finish go under its shading; matte ones over it.
+        let (under, top) = crate::graphics::laid(n.id, &mapped, pieces, Some(shading), longest);
+        if let Some(art) = crate::lighting::shaded_surface(n.id, shading, paint, longest, under) {
+            let mut group = Node::group(n.id, std::iter::once(Arc::new(art)).chain(top).collect());
+            group.opacity = opacity;
+            group.blend = blend;
+            return group;
+        }
     }
     let children = shaded
         .facets
@@ -194,14 +180,8 @@ fn surface(n: &Node, mut shaded: Shaded, paint: &Paint, opacity: f32, blend: Ble
                 .collect();
             Arc::new(Node::path(n.id, face.path(), Appearance { items, ..Default::default() }))
         })
-        .chain(laid().map(|(m, piece)| {
-            // Flat, each piece takes the shade of the surface under its centre.
-            let items = match piece.paint.color() {
-                Some(c) => vec![fill(crate::lighting::shaded(c, m.shade.tint, m.shade.highlight), piece.opacity)],
-                None => crate::lighting::shading_layers(&piece.paint, crate::lighting::brightness(m.shade.tint), m.shade.highlight),
-            };
-            mapped_node(n, &m.contours, items)
-        }))
+        // Flat, each graphic takes the shade of the surface under its centre.
+        .chain(crate::graphics::laid(n.id, &mapped, pieces, None, longest).1)
         .collect();
     let mut group = Node::group(n.id, children);
     group.opacity = opacity;
@@ -238,15 +218,20 @@ fn art_for(n: &Node, fx: &Effect, path: &PathData, rule: FillRule, items: &[&App
         let mut shadow = vec![];
         let mut contact = vec![];
         let mut strength: f64 = 0.0;
-        for item in items {
+        // Graphics go on the top fill (else the top stroke), over the whole object.
+        let top = items.iter().rposition(|i| matches!(i, AppearanceItem::Fill(_))).or(items.len().checked_sub(1));
+        let pieces = crate::graphics::pieces(&crate::graphics::graphics(&p), symbol, path, rule, b);
+        let art: Vec<Vec<Vec<Point>>> = pieces.iter().map(|piece| piece.rings.clone()).collect();
+        for (k, item) in items.iter().enumerate() {
             let (paint, opacity, blend) = paint_of(item);
-            let mut s = facets(ROTATE, &region(path, rule, item), b, &p, &[]).ok()?;
+            let (laid, art): (&[crate::graphics::Piece], &[Vec<Vec<Point>>]) = if Some(k) == top { (&pieces, &art) } else { (&[], &[]) };
+            let mut s = facets(ROTATE, &region(path, rule, item), b, &p, art).ok()?;
             shadow.extend(s.shadow.take().into_iter().flat_map(|s| s.subpaths));
             if let Some((c, k)) = s.contact.take() {
                 contact.extend(c.subpaths);
                 strength = strength.max(k);
             }
-            out.push(Arc::new(surface(n, s, &paint, opacity, blend, crate::lighting::shading_side(&p), &[])));
+            out.push(Arc::new(surface(n, s, &paint, opacity, blend, crate::lighting::shading_side(&p), laid)));
         }
         let shadow = (!shadow.is_empty()).then(|| PathData::new(shadow));
         let contact = (!contact.is_empty()).then(|| (PathData::new(contact), strength));
@@ -285,25 +270,8 @@ pub fn solid_art_in(n: &Node, doc: Option<&Document>) -> Option<Node> {
     if !has_solid(n) {
         return None;
     }
-    // At its natural size: symbols made in the app keep their art in a small square and their
-    // size as drawn apart.
-    let symbol = |name: &str| {
-        let doc = doc?;
-        let art = &doc.symbols.iter().find(|s| s.name == name)?.art;
-        let xf = doc.symbol_natural_xf(name);
-        if xf == vectorcraft_geom::Affine::IDENTITY {
-            return Some(art.clone());
-        }
-        let mut sized = (**art).clone();
-        sized.transform(xf, true);
-        Some(Arc::new(sized))
-    };
-    // The symbols drawn, for the memo: an edited symbol draws anew.
-    let mut used: Vec<Arc<Node>> = vec![];
-    let fx = n.appearance.effects.iter().chain(n.appearance.items.iter().flat_map(|i| i.effects().iter()));
-    for e in fx.filter(|e| e.visible && SOLIDS.contains(&e.id.as_str())) {
-        used.extend(crate::graphics::graphics(&e.params).iter().filter_map(|g| symbol(&g.symbol)));
-    }
+    let symbol = |name: &str| crate::graphics::symbol_art(doc, name);
+    let used = crate::graphics::used(n, &SOLIDS, doc);
     crate::memo::remember_with(2, n, &used, || evaluate(n, &symbol))
 }
 

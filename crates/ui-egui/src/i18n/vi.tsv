@@ -3632,6 +3632,7 @@ imageTrace	Outline	Đường viền
 3d	Bevel	Vát cạnh
 3d	Cap	Nắp
 3d	Hollow	Rỗng
+3d	Surface	Bề mặt
 3d	Rounded	Bo tròn
 3d	Solid	Đặc
 3d	Space	Khoảng cách
@@ -4352,6 +4353,7 @@ theme	Appearance	Giao diện
 	Delete Light	Xóa đèn
 	Add Light	Thêm đèn
 	Add Graphic	Thêm đồ họa
+	Finish	Hoàn thiện
 	Delete Graphic	Xóa đồ họa
 	Make a symbol to lay it on the surface.	Tạo một biểu tượng để đặt nó lên bề mặt.
 	More Lights	Thêm đèn khác

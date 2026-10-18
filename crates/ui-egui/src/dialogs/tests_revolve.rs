@@ -386,15 +386,34 @@ fn material_tab_lays_a_symbol_on_the_surface() {
     h.settle();
     h.click(h.rect("Add Graphic").center());
     let graphics = h.app.ui.dialog.as_ref().unwrap().fields.get("graphics").and_then(Value::as_array).cloned().unwrap_or_default();
-    assert_eq!(graphics, vec![json!({"symbol": "Badge", "x": 50.0, "y": 50.0, "scale": 100.0, "rotation": 0.0})]);
+    assert_eq!(graphics, vec![json!({"symbol": "Badge", "x": 50.0, "y": 50.0, "scale": 100.0, "rotation": 0.0, "finish": "matte"})]);
     let over = h.rect("Graphics").center();
     h.frame(vec![Event::PointerMoved(over), wheel.clone()]);
     h.settle();
-    for label in ["Badge", "Horizontal", "Vertical", "Scale", "Rotation"] {
+    for label in ["Badge", "Finish", "Matte", "Horizontal", "Vertical", "Scale", "Rotation"] {
         h.rect(label);
     }
     // The live preview takes it.
     let st = h.app.session.doc().unwrap();
     let node = st.doc.node(st.selection.objects[0]).unwrap();
     assert_eq!(node.appearance.effects.last().unwrap().params["graphics"][0]["symbol"], json!("Badge"));
+}
+
+#[test]
+fn revolve_and_rotate_material_tabs_offer_graphics() {
+    for effect in [REVOLVE, vectorcraft_effects::ROTATE] {
+        let mut h = Harness::with("M150 40 L180 60 L180 140 L150 160", effect, vec2(1400.0, 1400.0));
+        h.settle();
+        h.click(h.rect("Material").center());
+        let over = h.rect("Ambient Occlusion").center();
+        let wheel = Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: vec2(0.0, -20.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Default::default(),
+        };
+        h.frame(vec![Event::PointerMoved(over), wheel]);
+        h.settle();
+        h.rect("Graphics");
+    }
 }

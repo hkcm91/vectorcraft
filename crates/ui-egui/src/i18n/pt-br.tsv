@@ -1104,6 +1104,7 @@
 	History Options…	Opções do Histórico…
 	History States	Estados do Histórico
 	Hollow	Oco
+3d	Surface	Superfície
 	Home	Início
 	Horizon Height:	Altura do Horizonte:
 	Horizontal	Horizontal
@@ -3808,6 +3809,7 @@ axis	Both	Ambos
 	Delete Light	Excluir luz
 	Add Light	Adicionar luz
 	Add Graphic	Adicionar gráfico
+	Finish	Acabamento
 	Delete Graphic	Excluir gráfico
 	Make a symbol to lay it on the surface.	Crie um símbolo para aplicá-lo na superfície.
 	More Lights	Mais luzes

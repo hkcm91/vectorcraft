@@ -3667,6 +3667,7 @@ lighting	Light	光源
 3d	Cap	封口
 3d	Solid	實心
 3d	Hollow	空心
+3d	Surface	表面
 3d	Bevel	斜角
 3d	Rounded	圓角
 3d	Space	間距
@@ -3739,6 +3740,7 @@ lighting	Light	光源
 	Delete Light	刪除光源
 	Add Light	新增光源
 	Add Graphic	新增圖形
+	Finish	飾面
 	Delete Graphic	刪除圖形
 	Make a symbol to lay it on the surface.	建立符號後即可將其放到表面上。
 	More Lights	更多光源

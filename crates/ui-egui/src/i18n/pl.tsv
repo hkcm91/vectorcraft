@@ -4562,6 +4562,7 @@ mark-style	Japanese	Japońskie
 3d	Cap	Zakończenie
 3d	Solid	Pełne
 3d	Hollow	Puste
+3d	Surface	Powierzchnia
 3d	Bevel	Fazowanie
 3d	Rounded	Zaokrąglone
 3d	Space	Przestrzeń
@@ -4640,6 +4641,7 @@ mark-style	Japanese	Japońskie
 	Delete Light	Usuń światło
 	Add Light	Dodaj światło
 	Add Graphic	Dodaj grafikę
+	Finish	Wykończenie
 	Delete Graphic	Usuń grafikę
 	Make a symbol to lay it on the surface.	Utwórz symbol, aby umieścić go na powierzchni.
 	More Lights	Więcej świateł

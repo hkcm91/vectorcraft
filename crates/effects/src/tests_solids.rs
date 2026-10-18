@@ -555,20 +555,45 @@ fn a_graphic_is_laid_on_the_front_in_its_own_paint_and_shaded_with_it() {
 }
 
 #[test]
-fn a_smooth_shaded_graphic_goes_under_the_shading() {
+fn a_smooth_shaded_graphic_is_lit_on_a_matte_finish_or_in_the_surface() {
     let doc = logo_document(1.0);
-    let mut n = square_node();
-    n.appearance.effects.push(fx(INFLATE, json!({"graphics": [{"symbol": "Logo", "scale": 200, "rotation": 30}]})));
-    let art = solid_art_in(&n, Some(&doc)).unwrap();
+    let art_with = |finish: &str| {
+        let mut n = square_node();
+        n.appearance.effects.push(fx(
+            INFLATE,
+            json!({"metallic": 100, "specular": 100, "graphics": [{"symbol": "Logo", "scale": 200, "rotation": 30, "finish": finish}]}),
+        ));
+        solid_art_in(&n, Some(&doc)).unwrap()
+    };
+    // In the surface's finish: under its shading. The outline, the paint, the graphic, then the
+    // shading's tint (multiplied) and highlight.
+    let art = art_with("surface");
     let surface = art.children().unwrap().last().unwrap();
     let group = &surface.children().unwrap()[0];
     let NodeKind::Group { children, clip: true } = &group.kind else { panic!("a clip group") };
-    // The outline, the paint, the graphic, then the shading's tint (multiplied) and highlight.
     let blends: Vec<BlendMode> = children.iter().map(|c| c.blend).collect();
     assert_eq!(children.len(), 5);
     assert_eq!(blends[3..], [BlendMode::Multiply, BlendMode::Screen]);
     let [_, _, b] = fill_rgb(&children[2]);
     assert_eq!(b, 1.0, "unshaded: the shading lights it");
+    // Matte (the default): over the surface, in a clip group of its own, multiplied by a matte
+    // shading's tint, which on metal is far brighter than the metal's.
+    let art = art_with("matte");
+    let surface = art.children().unwrap().last().unwrap();
+    let parts = surface.children().unwrap();
+    assert_eq!(parts.len(), 2, "the surface, then the graphic");
+    let NodeKind::Group { children, clip: true } = &parts[1].kind else { panic!("a clip group") };
+    assert!(parts[1].isolate);
+    assert!(matches!(children[0].kind, NodeKind::Path { clipping: true, .. }));
+    let NodeKind::Image(matte) = &children.last().unwrap().kind else { panic!("the matte tint") };
+    assert_eq!(children.last().unwrap().blend, BlendMode::Multiply);
+    let mean = |key: &str| {
+        let px = vectorcraft_doc::generated::get(key).unwrap();
+        let lit: Vec<f64> = px.rgba.chunks(4).filter(|p| p[3] == 255).map(|p| f64::from(p[0])).collect();
+        lit.iter().sum::<f64>() / lit.len() as f64
+    };
+    // Lit by the lights as plain paint is, not darkened as metal's diffuse light is.
+    assert!(mean(&matte.key) > 120.0, "{}", mean(&matte.key));
     // Without graphics, a flat colour shades straight into one image.
     let mut plain = square_node();
     plain.appearance.effects.push(fx(INFLATE, json!({})));
@@ -577,9 +602,49 @@ fn a_smooth_shaded_graphic_goes_under_the_shading() {
 }
 
 #[test]
+fn flat_a_matte_graphic_takes_no_highlight() {
+    // A blue logo on a broad white gloss: in the surface's finish the highlight adds to it;
+    // matte, it stays pure blue, lit.
+    let doc = logo_document(1.0);
+    let logo = |finish: &str| {
+        let mut n = square_node();
+        let p = json!({"smoothShading": false, "rotationX": 0, "rotationY": 0, "rotationZ": 0, "specular": 100, "roughness": 100, "graphics": [{"symbol": "Logo", "finish": finish}]});
+        n.appearance.effects.push(fx(EXTRUDE, p));
+        fill_rgb(faces(&solid_art_in(&n, Some(&doc)).unwrap()).last().unwrap())
+    };
+    let [r, g, b] = logo("matte");
+    assert!(r == 0.0 && g == 0.0 && b > 0.3, "{r} {g} {b}");
+    let [r, g, _] = logo("surface");
+    assert!(r > 0.05 && g > 0.05, "{r} {g}");
+}
+
+#[test]
+fn rotate_lays_graphics_on_its_top_fill() {
+    let doc = logo_document(1.0);
+    let mut n = square_node();
+    n.appearance
+        .effects
+        .push(fx(ROTATE, json!({"smoothShading": false, "rotationX": 0, "rotationY": 0, "rotationZ": 0, "graphics": [{"symbol": "Logo"}]})));
+    let bare = faces(&solid_art(&n).unwrap()).len();
+    let art = solid_art_in(&n, Some(&doc)).unwrap();
+    // The fill's surface takes the graphic, last; the stroke's doesn't.
+    let surfaces = art.children().unwrap();
+    let fill_surface = surfaces.iter().find(|s| s.children().unwrap().len() > 1).unwrap();
+    assert_eq!(faces(&art).len(), bare + 1);
+    let logo = fill_surface.children().unwrap().last().unwrap();
+    let b = logo.geometric_bounds().unwrap();
+    assert!((b.x0 - 140.0).abs() < 1e-6 && (b.width() - 20.0).abs() < 1e-6, "{b:?}");
+}
+
+#[test]
 fn bad_graphics_are_refused() {
     let n = square_node();
-    for bad in [json!({"graphics": "Logo"}), json!({"graphics": [{"x": 5}]}), json!({"graphics": [{"symbol": "Logo", "scale": "big"}]})] {
+    for bad in [
+        json!({"graphics": "Logo"}),
+        json!({"graphics": [{"x": 5}]}),
+        json!({"graphics": [{"symbol": "Logo", "scale": "big"}]}),
+        json!({"graphics": [{"symbol": "Logo", "finish": "gold"}]}),
+    ] {
         assert!(validate_solid(&n, EXTRUDE, &bad).is_err(), "{bad}");
     }
     assert!(validate_solid(&n, INFLATE, &json!({"graphics": [{"symbol": "Logo", "x": 20, "y": 80, "scale": 50, "rotation": -15}]})).is_ok());

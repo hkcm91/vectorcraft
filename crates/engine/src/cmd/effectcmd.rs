@@ -175,8 +175,8 @@ pub(crate) fn apply(s: &mut Session, p: &Value) -> Result<Value> {
                 }
             } else {
                 effects::validate_solid(n, id, &effect.params).map_err(|e| bad(C, e))?;
-                symbols_exist(s, &effect.params, C)?;
             }
+            symbols_exist(s, &effect.params, C)?;
             if effects::has_revolve(n) || effects::has_solid(n) {
                 return Err(bad(C, ONE_3D));
             }
@@ -330,8 +330,8 @@ fn set_params(s: &mut Session, p: &Value) -> Result<Value> {
                 effects::validate_revolve(n, &prospective).map_err(|e| bad(C, e))?;
             } else {
                 effects::validate_solid(n, &e.id, &prospective).map_err(|e| bad(C, e))?;
-                symbols_exist(s, &prospective, C)?;
             }
+            symbols_exist(s, &prospective, C)?;
         }
     }
     let ids = edit_effects(s, p, item, C, "Effect Options", &format!("{C}: no effect at index {index}"), |fx| {
@@ -590,6 +590,12 @@ mod tests {
         };
         let err = apply(&mut s, "Missing").unwrap_err().to_string();
         assert!(err.contains("Missing"), "{err}");
+        // Revolve and Rotate check theirs too.
+        let line = s.execute("path.create", &json!({"d": "M 300 100 L 300 200"})).unwrap();
+        for effect in ["threeD.revolve", "threeD.rotate"] {
+            let params = json!({"graphics": [{"symbol": "Missing"}]});
+            assert!(s.execute("effect.apply", &json!({"effect": effect, "ids": [line["id"]], "item": null, "params": params})).is_err(), "{effect}");
+        }
         apply(&mut s, "Logo").unwrap();
         // Laid at the size it was drawn (a symbol keeps its art in a small square and its size apart):
         // straight on, its fill is 40 pt across, in the middle of the 100 pt square.

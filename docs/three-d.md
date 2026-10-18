@@ -143,14 +143,17 @@ inflated heart on four cores). Letting go shades it in full again; OK never keep
 the crisp vector outline throughout. The last few 3D arts are remembered by their object's content, so drawing
 an object and finding its bounds shade it once.
 
-**Graphics** (Extrude & Bevel and Inflate) lay symbols of the document on the front surface: a logo on a badge,
-a label on a puffed button. **Add Graphic** places the first symbol in the middle; each graphic has its symbol,
-**Horizontal** and **Vertical** (its centre, as a percentage across and down the object's bounds), **Scale** (of
-the symbol's own size, strokes too) and **Rotation** (anticlockwise), and a button to delete it; up to eight.
-Each fill and stroke of the symbol's art keeps its own paint, is clipped to the shape, follows the surface (an
-inflated front bends it, perspective foreshortens it) and is lit with it: with smooth shading it lies under the
-shading, so highlights and shadows cross it, and flat it takes the shade of the surface under its centre. A
-graphic on a front turned away is hidden. Edit the symbol and every surface showing it updates. Without a
+**Graphics** lay symbols of the document on the surface: a logo on a badge, a label on a puffed button or round
+a bottle. Extrude & Bevel and Inflate take them on the front, Rotate on its top fill and Revolve wraps them round
+the surface (see [revolve.md](revolve.md)). **Add Graphic** places the first symbol in the middle; each graphic
+has its symbol, a **Finish**, **Horizontal** and **Vertical** (its centre, as a percentage across and down the
+object's bounds), **Scale** (of the symbol's own size, strokes too) and **Rotation** (anticlockwise), and a
+button to delete it; up to eight. Each fill and stroke of the symbol's art keeps its own paint, is clipped to
+the shape, follows the surface (an inflated front bends it, perspective foreshortens it) and is lit with it.
+**Matte** (new graphics) lights it as print: the same lights, shadows and cel bands, but no highlight, metal or
+rim light, so a white logo on chrome reads as white paint lit by the lights, not as dark metal. **Surface** gives it the surface's own material: glossy on
+gloss, metallic on metal (with smooth shading it then lies under the surface's shading). Flat, a graphic takes
+the shade of the surface under its centre. A graphic on a part of the surface turned away is hidden. Edit the symbol and every surface showing it updates. Without a
 symbol in the document the section says to make one; a command naming a symbol the document doesn't have is
 refused.
 
@@ -163,8 +166,9 @@ three bands with a small, hard highlight. All values are our own.
 
 `threeD.extrude`: `depth`, `twist`, `taper` (%), `cap`, `bevel` (`none`, `classic`, `rounded`, `cove`, `step`,
 `ogee`), `bevelWidth`, `bevelHeight`, `bevelRepeat`, `bevelSpace` (%), `bevelInside`, `bevelBothSides`.
-`threeD.inflate`: `depth`, `volume` (%), `bothSides`. Both take `graphics` (up to eight `{symbol, x, y, scale,
-rotation}`: x and y in % of the bounds, 50 the middle; scale in %, 100 the symbol's size; rotation in degrees).
+`threeD.inflate`: `depth`, `volume` (%), `bothSides`. All three take `graphics` (up to eight `{symbol, x, y,
+scale, rotation, finish}`: x and y in % of the bounds, 50 the middle; scale in %, 100 the symbol's size; rotation
+in degrees; finish `matte` or `surface`, absent: `matte`), as Revolve does.
 All three take the view and lighting parameters Revolve
 uses: `rotationX`, `rotationY`, `rotationZ`, `perspective` (%), `shade`, `lightAzimuth`, `lightElevation`,
 `lightIntensity` (%), `ambient` (%), and the lighting and shadow parameters every 3D effect takes: `lightColor`
@@ -189,8 +193,8 @@ out, perspective). No Adobe software, assets, presets or bevel shapes were used.
 
 - **Materials** are our own lighting model (highlight, roughness, metallic, rim light, cel bands, procedural
   reflection backdrops, screen-space ambient occlusion): there are no Adobe Substance materials, no textures,
-  image-based lighting or bump maps, graphics only on the front of Extrude & Bevel and Inflate (not on their
-  sides, a bevel, a revolved surface or Rotate; no tiling) and no **ray-traced rendering**, so a
+  image-based lighting or bump maps, no graphics on the sides or bevels of Extrude & Bevel and Inflate and no
+  tiled graphics, and no **ray-traced rendering**, so a
   surface never reflects itself or other objects. Faces are painted with the object's top fill (else its top
   stroke) for Extrude & Bevel and Inflate; gradients and patterns are multiplied by the shading, not tinted by
   the lights' colours beyond that. The light gizmo moves the main light only.

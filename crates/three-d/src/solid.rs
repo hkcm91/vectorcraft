@@ -264,8 +264,9 @@ pub struct Shaded {
 pub struct Mapped {
     /// Its rings on the surface, projected: none where the surface under it faces away.
     pub contours: Vec<Vec<Point>>,
-    /// How the surface under its centre is lit.
+    /// How the surface under its centre is lit, in its own material and on a matte finish.
     pub shade: Shade,
+    pub matte: Shade,
 }
 
 /// Mapped art's points in all, at most: more pieces are left off.
@@ -275,6 +276,20 @@ const MAX_MAPPED_POINTS: usize = 200_000;
 /// gives a point's place on the surface and the surface's outward normal there (view space).
 /// Edges are cut to at most `size / 96` so the art bends with a curved surface and perspective.
 fn map_art(art: &[Vec<Vec<Point>>], size: f64, camera: &Camera, place: impl Fn(Point) -> (V3, V3)) -> Result<Vec<Mapped>, String> {
+    map_with(art, size, &camera.rig, &|q| camera.project(q), &|at, n| camera.facing(at, n), place)
+}
+
+/// [`map_art`] with the projection, the facing test and the lights given (Revolve has no
+/// [`Camera`]).
+pub(crate) fn map_with(
+    art: &[Vec<Vec<Point>>],
+    size: f64,
+    rig: &lighting::Rig,
+    project: &dyn Fn(V3) -> Point,
+    facing: &dyn Fn(V3, V3) -> f64,
+    place: impl Fn(Point) -> (V3, V3),
+) -> Result<Vec<Mapped>, String> {
+    let matte = rig.matte();
     let longest = (size / 96.0).max(0.01);
     let mut total = 0;
     let mut out = Vec::with_capacity(art.len());
@@ -291,8 +306,8 @@ fn map_art(art: &[Vec<Vec<Point>>], size: f64, camera: &Camera, place: impl Fn(P
         }
         let (at, normal) = place(centre);
         // Faces away, or seen exactly edge-on (not a number): hidden.
-        if camera.facing(at, normal).partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
-            out.push(Mapped { contours: vec![], shade: camera.shade(normal) });
+        if facing(at, normal).partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+            out.push(Mapped { contours: vec![], shade: rig.shade(normal), matte: matte.shade(normal) });
             continue;
         }
         let mut contours = Vec::with_capacity(piece.len());
@@ -307,7 +322,7 @@ fn map_art(art: &[Vec<Vec<Point>>], size: f64, camera: &Camera, place: impl Fn(P
                 }
                 for k in 0..cuts {
                     let p = a.lerp(*b, k as f64 / cuts as f64);
-                    let q = camera.project(place(p).0);
+                    let q = project(place(p).0);
                     if !q.x.is_finite() || !q.y.is_finite() {
                         return Err("The 3D projection is not finite".into());
                     }
@@ -316,7 +331,7 @@ fn map_art(art: &[Vec<Vec<Point>>], size: f64, camera: &Camera, place: impl Fn(P
             }
             contours.push(projected);
         }
-        out.push(Mapped { contours, shade: camera.shade(normal) });
+        out.push(Mapped { contours, shade: rig.shade(normal), matte: matte.shade(normal) });
     }
     Ok(out)
 }

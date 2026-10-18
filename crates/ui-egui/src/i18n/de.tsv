@@ -4253,6 +4253,7 @@ theme	Appearance	Erscheinungsbild
 3d	Cap	Deckflächen
 3d	Solid	Massiv
 3d	Hollow	Hohl
+3d	Surface	Oberfläche
 3d	Bevel	Abgeflachte Kante
 3d	Rounded	Abgerundet
 3d	Space	Abstand
@@ -4325,6 +4326,7 @@ theme	Appearance	Erscheinungsbild
 	Delete Light	Licht löschen
 	Add Light	Licht hinzufügen
 	Add Graphic	Grafik hinzufügen
+	Finish	Oberflächengüte
 	Delete Graphic	Grafik löschen
 	Make a symbol to lay it on the surface.	Erstellen Sie ein Symbol, um es auf die Oberfläche zu legen.
 	More Lights	Weitere Lichter

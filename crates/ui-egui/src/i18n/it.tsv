@@ -4298,6 +4298,7 @@ lighting	Light	Luce
 3d	Cap	Chiusura
 3d	Solid	Pieno
 3d	Hollow	Cavo
+3d	Surface	Superficie
 3d	Bevel	Smusso
 3d	Rounded	Arrotondato
 3d	Space	Spazio
@@ -4370,6 +4371,7 @@ lighting	Light	Luce
 	Delete Light	Elimina luce
 	Add Light	Aggiungi luce
 	Add Graphic	Aggiungi grafica
+	Finish	Finitura
 	Delete Graphic	Elimina grafica
 	Make a symbol to lay it on the surface.	Crea un simbolo per applicarlo sulla superficie.
 	More Lights	Altre luci

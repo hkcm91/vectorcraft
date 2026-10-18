@@ -143,6 +143,7 @@ pub fn visible_faces(faces: &[Face]) -> Result<Vec<VisibleFace>, String> {
     }
     if faces.iter().any(|f| {
         f.points.len() > 4
+            || !f.holes.is_empty()
             || !f.brightness.is_finite()
             || !f.depth.is_finite()
             || f.points.iter().any(|p| !p.x.is_finite() || !p.y.is_finite() || p.x.abs().max(p.y.abs()) > 1e8)
@@ -235,6 +236,7 @@ mod tests {
     fn face(rect: Rect, brightness: f64) -> Face {
         Face {
             points: vec![Point::new(rect.x0, rect.y0), Point::new(rect.x1, rect.y0), Point::new(rect.x1, rect.y1), Point::new(rect.x0, rect.y1)],
+            holes: vec![],
             depth: brightness,
             brightness,
             tint: [brightness; 3],

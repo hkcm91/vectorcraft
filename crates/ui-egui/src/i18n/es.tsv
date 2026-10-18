@@ -4670,6 +4670,7 @@ mark-style	Japanese	Japonesas
 3d	Cap	Tapa
 3d	Solid	Sólido
 3d	Hollow	Hueco
+3d	Surface	Superficie
 3d	Bevel	Bisel
 3d	Rounded	Redondeado
 3d	Space	Espacio
@@ -4738,6 +4739,7 @@ mark-style	Japanese	Japonesas
 	Delete Light	Eliminar luz
 	Add Light	Añadir luz
 	Add Graphic	Añadir gráfico
+	Finish	Acabado
 	Delete Graphic	Eliminar gráfico
 	Make a symbol to lay it on the surface.	Cree un símbolo para colocarlo sobre la superficie.
 	More Lights	Más luces

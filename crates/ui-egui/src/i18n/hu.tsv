@@ -4696,6 +4696,7 @@ imageTrace	Outline	Körvonal
 3d	Cap	Zárólap
 3d	Solid	Tömör
 3d	Hollow	Üreges
+3d	Surface	Felület
 3d	Bevel	Élletörés
 3d	Rounded	Lekerekített
 3d	Space	Köz
@@ -4764,6 +4765,7 @@ imageTrace	Outline	Körvonal
 	Delete Light	Fény törlése
 	Add Light	Fény hozzáadása
 	Add Graphic	Grafika hozzáadása
+	Finish	Felületkezelés
 	Delete Graphic	Grafika törlése
 	Make a symbol to lay it on the surface.	Hozzon létre egy szimbólumot, hogy a felületre helyezhesse.
 	More Lights	További fények

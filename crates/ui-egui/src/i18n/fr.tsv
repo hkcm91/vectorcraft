@@ -4306,6 +4306,7 @@ lighting	Light	Lumière
 3d	Cap	Fermeture
 3d	Solid	Plein
 3d	Hollow	Creux
+3d	Surface	Surface
 3d	Bevel	Biseau
 3d	Rounded	Arrondi
 3d	Space	Espace
@@ -4796,6 +4797,7 @@ theme	Appearance	Apparence
 	Delete Light	Supprimer la lumière
 	Add Light	Ajouter une lumière
 	Add Graphic	Ajouter un graphisme
+	Finish	Finition
 	Delete Graphic	Supprimer le graphisme
 	Make a symbol to lay it on the surface.	Créez un symbole pour le poser sur la surface.
 	More Lights	Autres lumières
