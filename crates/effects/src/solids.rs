@@ -94,6 +94,7 @@ pub fn inflate_options(p: &Value) -> Inflate {
     Inflate {
         depth: num(p, "depth", 0.0),
         volume: num(p, "volume", 50.0),
+        pillow: num(p, "pillow", 0.0),
         both_sides: flag(p, "bothSides", false),
         twist: num(p, "twist", 0.0),
         taper: num(p, "taper", 100.0) / 100.0,
@@ -113,6 +114,19 @@ fn profile(n: &Node) -> Option<(PathData, FillRule)> {
     }
 }
 
+/// Inflate's layers on a group: its visible paths and compound paths, bottom first, each with
+/// its node (for its paint). `None` for anything else, or a group without such a child.
+fn layers(n: &Node) -> Option<Vec<(PathData, &Node)>> {
+    let NodeKind::Group { children, clip: false } = &n.kind else { return None };
+    let layers: Vec<_> = children.iter().filter(|c| c.visible).filter_map(|c| profile(c).map(|(path, _)| (path, c.as_ref()))).collect();
+    (!layers.is_empty()).then_some(layers)
+}
+
+/// The bounds of all `layers`.
+fn layer_bounds(layers: &[(PathData, &Node)]) -> Option<Rect> {
+    layers.iter().filter_map(|(p, _)| p.bounds()).reduce(|a, b| a.union(b))
+}
+
 /// The solid's facets, with `art` (pieces of rings) laid on its front.
 fn facets(id: &str, path: &PathData, bounds: Rect, p: &Value, art: &[Vec<Vec<Point>>]) -> Result<Shaded, String> {
     let view = view_options(p);
@@ -126,8 +140,19 @@ fn facets(id: &str, path: &PathData, bounds: Rect, p: &Value, art: &[Vec<Vec<Poi
 /// Validate before a command changes the document; the evaluator bounds loaded files too.
 pub fn validate_solid(n: &Node, id: &str, p: &Value) -> Result<(), String> {
     let label = crate::effect_info(id).map_or("This effect", |e| e.label.trim_end_matches('…'));
-    let (path, _) =
-        profile(n).ok_or_else(|| format!("{label} currently requires a path or compound path. Convert type, images and groups to paths first."))?;
+    if id == INFLATE
+        && let Some(layers) = layers(n)
+    {
+        crate::lighting::validate(p)?;
+        crate::graphics::validate(p)?;
+        let b = layer_bounds(&layers).ok_or("Inflate requires shapes with at least two anchors")?;
+        let paths: Vec<PathData> = layers.into_iter().map(|(p, _)| p).collect();
+        return vectorcraft_three_d::inflate_stack(&paths, b, inflate_options(p), view_options(p), &[]).map(|_| ());
+    }
+    let (path, _) = profile(n).ok_or_else(|| match id {
+        INFLATE => format!("{label} currently requires a path, a compound path or a group of them. Convert type and images to paths first."),
+        _ => format!("{label} currently requires a path or compound path. Convert type, images and groups to paths first."),
+    })?;
     let b = path.bounds().ok_or_else(|| format!("{label} requires a shape with at least two anchors"))?;
     if let Some(v) = p.get("bevel")
         && !v.as_str().is_some_and(|s| s == "none" || BevelShape::parse(s).is_some())
@@ -275,7 +300,56 @@ pub fn solid_art_in(n: &Node, doc: Option<&Document>) -> Option<Node> {
     crate::memo::remember_with(2, n, &used, || evaluate(n, &symbol))
 }
 
+/// Inflate on a group's layers ([`layers`]): each puffed on those below it, in its own top fill
+/// (else top stroke), graphics on the top one; the effects after it act on the whole.
+fn evaluate_stack(n: &Node, index: usize, fx: &Effect, layers: &[(PathData, &Node)], symbol: Symbols) -> Option<Node> {
+    let b = layer_bounds(layers)?;
+    let p = crate::lighting::drawing_params(&fx.id, &fx.params);
+    let size = b.width().max(b.height());
+    let (top_path, top) = layers.last()?;
+    let rule = match &top.kind {
+        NodeKind::Path { rule, .. } | NodeKind::Compound { rule, .. } => *rule,
+        _ => FillRule::NonZero,
+    };
+    let pieces = crate::graphics::pieces(&crate::graphics::graphics(&p), symbol, top_path, rule, b);
+    let art: Vec<Vec<Vec<Point>>> = pieces.iter().map(|piece| piece.rings.clone()).collect();
+    let paths: Vec<PathData> = layers.iter().map(|(p, _)| p.clone()).collect();
+    let stack = vectorcraft_three_d::inflate_stack(&paths, b, inflate_options(&p), view_options(&p), &art).ok()?;
+    let (mut shadow, mut contact, mut strength) = (vec![], vec![], 0.0f64);
+    let mut surfaces = vec![];
+    let last = stack.len().saturating_sub(1);
+    for (k, (mut s, (_, layer))) in stack.into_iter().zip(layers).enumerate() {
+        shadow.extend(s.shadow.take().into_iter().flat_map(|s| s.subpaths));
+        if let Some((c, w)) = s.contact.take() {
+            contact.extend(c.subpaths);
+            strength = strength.max(w);
+        }
+        let painted: Vec<&AppearanceItem> = layer.appearance.items.iter().filter(|i| crate::paints(i)).collect();
+        // An unpainted layer still lifts those above it; it just isn't drawn.
+        let Some(item) = painted.iter().rev().find(|i| matches!(i, AppearanceItem::Fill(_))).or_else(|| painted.last()) else { continue };
+        let (paint, opacity, blend) = paint_of(item);
+        let laid: &[crate::graphics::Piece] = if k == last { &pieces } else { &[] };
+        surfaces.push(Arc::new(surface(n, s, &paint, opacity, blend, crate::lighting::shading_side(&p), laid)));
+    }
+    let shadow = (!shadow.is_empty()).then(|| PathData::new(shadow));
+    let contact = (!contact.is_empty()).then(|| (PathData::new(contact), strength));
+    let mut children = crate::lighting::shadow_nodes(n, shadow, contact, &p, size);
+    children.extend(surfaces);
+    let mut art = n.clone();
+    art.kind = NodeKind::Group { children, clip: false };
+    // Geometry effects before Inflate would reshape each layer; on a group they are left out.
+    let remaining = n.appearance.effects.iter().enumerate().filter(|(i, e)| *i != index && !(is_geometry(&e.id) && *i < index));
+    art.appearance = Appearance { effects: remaining.map(|(_, e)| e.clone()).collect(), ..Default::default() }.into();
+    Some(art)
+}
+
 fn evaluate(n: &Node, symbol: Symbols) -> Option<Node> {
+    if let Some((index, fx)) = solid(&n.appearance.effects)
+        && fx.id == INFLATE
+        && let Some(layers) = layers(n)
+    {
+        return evaluate_stack(n, index, fx, &layers, symbol);
+    }
     let (path, rule) = profile(n)?;
     let ctx = GeomContext::of(n);
     let painted: Vec<&AppearanceItem> = n.appearance.items.iter().filter(|i| crate::paints(i)).collect();

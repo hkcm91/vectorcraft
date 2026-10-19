@@ -208,6 +208,40 @@ fn parameters_are_validated_and_lengths_scale_with_the_object() {
 }
 
 #[test]
+fn inflate_on_a_group_puffs_each_layer_in_its_own_paint() {
+    let shape = |id: u64, x: f64, s: f64, c: Color| {
+        let mut b = BezPath::new();
+        b.move_to((x, x));
+        b.line_to((x + s, x));
+        b.line_to((x + s, x + s));
+        b.line_to((x, x + s));
+        b.close_path();
+        Arc::new(Node::path(NodeId(id), PathData::from_bezpath(&b), Appearance::basic(Paint::solid(c), Paint::None, 0.0)))
+    };
+    let blue = Color::Rgb { r: 0.1, g: 0.2, b: 0.9 };
+    let mut g = Node::group(NodeId(9), vec![shape(1, 100.0, 100.0, RED), shape(2, 130.0, 40.0, blue)]);
+    let p = json!({"rotationX": 0, "rotationY": 0, "rotationZ": 0, "smoothShading": false, "pillow": 100});
+    validate_solid(&g, INFLATE, &p).unwrap();
+    assert!(validate_solid(&g, EXTRUDE, &json!({})).is_err(), "only Inflate takes a group");
+    g.appearance = Appearance { effects: vec![fx(INFLATE, p)], ..Default::default() }.into();
+    let art = solid_art(&g).unwrap();
+    let surfaces = art.children().unwrap();
+    assert_eq!(surfaces.len(), 2, "one surface per layer, bottom first");
+    let mean = |s: &Node| {
+        let cs: Vec<[f32; 3]> = s.children().unwrap().iter().map(|f| fill_rgb(f)).collect();
+        let n = cs.len() as f32;
+        [0, 1, 2].map(|k| cs.iter().map(|c| c[k]).sum::<f32>() / n)
+    };
+    assert!(mean(&surfaces[0])[0] > mean(&surfaces[0])[2], "red below");
+    assert!(mean(&surfaces[1])[2] > mean(&surfaces[1])[0], "blue on top");
+    // Straight on, the top layer covers its own square only.
+    let b = surfaces[1].visual_bounds().unwrap();
+    assert!((b.x0 - 130.0).abs() < 1.0 && (b.x1 - 170.0).abs() < 1.0, "{b:?}");
+    assert_eq!(inflate_options(&json!({"pillow": 40})).pillow, 40.0);
+    assert_eq!(crate::default_params(INFLATE).unwrap()["pillow"], json!(0.0));
+}
+
+#[test]
 fn inflate_reads_twist_taper_and_cap() {
     let o = inflate_options(&json!({"twist": 90, "taper": 40, "cap": false}));
     assert_eq!((o.twist, o.taper, o.cap), (90.0, 0.4, false));

@@ -214,6 +214,9 @@ pub struct Inflate {
     pub depth: f64,
     /// How far the surface puffs out (0..100 %; 50 % rounds it like a half sphere).
     pub volume: f64,
+    /// How soft the puff is (0..100 %): 0 % a dome whose edge rises straight up, 100 % a pillow,
+    /// its edge a seam it rises from at an angle, its top plump and level, its corners pinched.
+    pub pillow: f64,
     /// Puff the back out too; otherwise it stays flat.
     pub both_sides: bool,
     /// The turn of the back against the front, about the shape's centre: 0° to 360°.
@@ -228,7 +231,7 @@ pub struct Inflate {
 
 impl Default for Inflate {
     fn default() -> Self {
-        Self { depth: 0.0, volume: 50.0, both_sides: false, twist: 0.0, taper: 1.0, cap: true, draft: false }
+        Self { depth: 0.0, volume: 50.0, pillow: 0.0, both_sides: false, twist: 0.0, taper: 1.0, cap: true, draft: false }
     }
 }
 
@@ -387,6 +390,7 @@ impl Inflate {
         Self {
             depth: finite(self.depth, 0.0, 0.0, 2000.0),
             volume: finite(self.volume, 50.0, 0.0, 100.0),
+            pillow: finite(self.pillow, 0.0, 0.0, 100.0),
             twist: finite(self.twist, 0.0, 0.0, 360.0),
             taper: finite(self.taper, 1.0, 0.01, 1.0),
             ..self
@@ -909,6 +913,7 @@ fn edge_distance(rings: &[Vec<Point>], p: Point) -> f64 {
 
 /// The edges of `rings` filed in a grid of square buckets, so the nearest edge to a point is
 /// found among the buckets around it rather than among all the edges.
+#[derive(Clone)]
 struct Edges {
     edges: Vec<(Point, Point)>,
     origin: Point,
@@ -1258,6 +1263,7 @@ fn cut_cell(rings: &[Vec<Point>], cell: Rect) -> Vec<Vec<Point>> {
 /// grid lines taken into account where it is less than a grid step (Shortley–Weller), so the
 /// outline needn't fall on the grid. √φ rises vertically from the outline and rounds smoothly
 /// inside, without the creases a distance-to-the-edge height has along a shape's middle.
+#[derive(Clone)]
 struct Membrane {
     origin: Point,
     step: f64,
@@ -1495,42 +1501,164 @@ pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) 
 pub fn inflate_mapped(path: &PathData, bounds: Rect, options: Inflate, view: View, art: &[Vec<Vec<Point>>]) -> Result<Shaded, String> {
     check_bounds(bounds)?;
     let o = options.sanitized();
-    let rings = rings(path, bounds.width().max(bounds.height()), MAX_SOLID_POINTS)?;
-    if rings.is_empty() {
-        return Ok(Shaded::default());
+    let Some(puff) = Puff::solve(path, bounds, o)? else { return Ok(Shaded::default()) };
+    let extent = o.depth + 2.0 * puff.height;
+    build_inflate(path, bounds, o, view, art, puff, &Stack { below: &[], half: o.depth / 2.0, extent })
+}
+
+/// Inflate on nested layers (bottom first), each puffed on the surface of those below it: where a
+/// layer lies inside another it rises from that one's surface, meeting it at its own outline, so
+/// a star on a disc on a square is three cushions sitting on each other. The bottom layer has the
+/// depth, back and sides; the others only their puffed fronts. They turn together about the
+/// centre of `bounds` (all the layers'), and `art` goes on the top layer. One [`Shaded`] per
+/// layer, bottom first, to be drawn in that order.
+pub fn inflate_stack(layers: &[PathData], bounds: Rect, options: Inflate, view: View, art: &[Vec<Vec<Point>>]) -> Result<Vec<Shaded>, String> {
+    check_bounds(bounds)?;
+    if layers.len() > MAX_LAYERS {
+        return Err(format!("Inflate takes at most {MAX_LAYERS} layers"));
     }
+    let o = options.sanitized();
+    let mut puffs = Vec::with_capacity(layers.len());
+    for path in layers {
+        puffs.push(Puff::solve(path, bounds, o)?);
+    }
+    let extent = o.depth + 2.0 * puffs.iter().flatten().map(|p| p.height).sum::<f64>();
+    let upper = Inflate { depth: 0.0, both_sides: false, cap: false, twist: 0.0, taper: 1.0, ..o };
+    let mut below: Vec<Puff> = vec![];
+    let mut out = Vec::with_capacity(layers.len());
+    let top = layers.len().saturating_sub(1);
+    for (k, (path, puff)) in layers.iter().zip(puffs).enumerate() {
+        let Some(puff) = puff else {
+            out.push(Shaded::default());
+            continue;
+        };
+        let layer = if below.is_empty() { o } else { upper };
+        let art = if k == top { art } else { &[] };
+        let stack = Stack { below: &below, half: o.depth / 2.0, extent };
+        out.push(build_inflate(path, bounds, layer, view, art, puff.clone(), &stack)?);
+        below.push(puff);
+    }
+    Ok(out)
+}
+
+/// The most layers [`inflate_stack`] takes: each is a membrane solved and a surface built.
+pub const MAX_LAYERS: usize = 16;
+
+/// How a layer of [`inflate_stack`] sits: on the puffs `below` it, its front `half` the bottom
+/// layer's depth ahead of the middle, in a view framed for the stack's whole `extent`.
+struct Stack<'a> {
+    below: &'a [Puff],
+    half: f64,
+    extent: f64,
+}
+
+/// One shape's puff: the membrane over it and how high it rises.
+#[derive(Clone)]
+struct Puff {
+    rings: Vec<Vec<Point>>,
+    m: Membrane,
+    edges: Edges,
+    height: f64,
+    /// [`Inflate::pillow`] as a share (0..1).
+    pillow: f64,
+}
+
+impl Puff {
+    /// `None` for a shape with no area to puff.
+    fn solve(path: &PathData, bounds: Rect, o: Inflate) -> Result<Option<Self>, String> {
+        let rings = rings(path, bounds.width().max(bounds.height()), MAX_SOLID_POINTS)?;
+        let size = bounds.width().max(bounds.height());
+        if rings.is_empty() || size <= 0.0 {
+            return Ok(None);
+        }
+        let cells = if o.draft { 24 } else { 48 };
+        let cell = size / cells as f64;
+        let (nx, ny) = (((bounds.width() / cell).ceil() as usize).max(1), ((bounds.height() / cell).ceil() as usize).max(1));
+        // The membrane is solved on a grid twice as fine as the facets (a draft's as coarse): its
+        // error shrinks with the square of the step, and a mirror finish shows even a slight
+        // unevenness of the surface's slope.
+        let fineness = if o.draft { 1 } else { 2 };
+        let coarse = Membrane::solve(&rings, bounds.origin(), cell, nx + 1, ny + 1, None);
+        let m = if fineness > 1 {
+            Membrane::solve(&rings, bounds.origin(), cell / fineness as f64, nx * fineness + 1, ny * fineness + 1, Some(&coarse))
+        } else {
+            coarse
+        };
+        let edges = Edges::new(&rings);
+        // A circle of radius r puffs into a half sphere of radius r at 50 % (its membrane peaks at r²/4).
+        let height = 2.0 * m.peak.sqrt() * o.volume / 50.0;
+        Ok(Some(Self { rings, m, edges, height, pillow: o.pillow / 100.0 }))
+    }
+
+    /// The height's profile across the puff, from φ's share `s` (0 at the outline, 1 at the peak):
+    /// a dome (√s, rising straight up at the outline) blended with a pillow (s·(2 − s), rising at
+    /// an angle and level on top).
+    fn profile(&self, s: f64) -> f64 {
+        let s = s.clamp(0.0, 1.0);
+        (1.0 - self.pillow) * s.sqrt() + self.pillow * s * (2.0 - s)
+    }
+
+    /// How high the surface rises at `p` (0 on and outside the outline).
+    fn lift(&self, p: Point) -> f64 {
+        if self.m.peak <= 0.0 || self.edges.near(p, 1e-9) {
+            return 0.0;
+        }
+        let d = if self.edges.near(p, Membrane::RIM * self.m.step) { self.edges.distance(p) } else { f64::INFINITY };
+        self.height * self.profile(self.m.at_rim(p, d).max(0.0) / self.m.peak)
+    }
+
+    /// The surface's normal at `p` from φ's value and slope there, scaled to stay finite where a
+    /// dome rises straight up: (−c·∇φ, r), with r = √s (1 for a full pillow, never vertical) and
+    /// c = dz/dφ · r.
+    fn normal(&self, phi: f64, gx: f64, gy: f64, on_edge: bool) -> (f64, f64, f64) {
+        if self.m.peak <= 0.0 {
+            return (0.0, 0.0, 1.0);
+        }
+        let s = (phi.max(0.0) / self.m.peak).min(1.0);
+        let r = if self.pillow >= 1.0 {
+            1.0
+        } else if on_edge {
+            0.0
+        } else {
+            s.sqrt()
+        };
+        let c = self.height / self.m.peak * ((1.0 - self.pillow) * 0.5 + self.pillow * (2.0 - 2.0 * s) * r);
+        (-c * gx, -c * gy, r)
+    }
+}
+
+/// Inflate's surface for one solved `puff`, standing on `stack`'s layers below it.
+fn build_inflate(
+    path: &PathData,
+    bounds: Rect,
+    o: Inflate,
+    view: View,
+    art: &[Vec<Vec<Point>>],
+    puff: Puff,
+    stack: &Stack,
+) -> Result<Shaded, String> {
     let size = bounds.width().max(bounds.height());
-    if size <= 0.0 {
-        return Ok(Shaded::default());
-    }
     let cells = if o.draft { 24 } else { 48 };
     let cell = size / cells as f64;
     let (nx, ny) = (((bounds.width() / cell).ceil() as usize).max(1), ((bounds.height() / cell).ceil() as usize).max(1));
-    // The membrane is solved on a grid twice as fine as the facets (a draft's as coarse): its
-    // error shrinks with the square of the step, and a mirror finish shows even a slight unevenness
-    // of the surface's slope.
-    let fineness = if o.draft { 1 } else { 2 };
-    let coarse = Membrane::solve(&rings, bounds.origin(), cell, nx + 1, ny + 1, None);
-    let m = if fineness > 1 {
-        Membrane::solve(&rings, bounds.origin(), cell / fineness as f64, nx * fineness + 1, ny * fineness + 1, Some(&coarse))
-    } else {
-        coarse
-    };
-    let edges = Edges::new(&rings);
+    let Puff { rings, m, edges, .. } = &puff;
     let outline = PathData::new(rings.iter().map(|r| vectorcraft_geom::SubPath::polyline(r, true)).collect());
-    // A circle of radius r puffs into a half sphere of radius r at 50 % (its membrane peaks at r²/4).
-    let height = 2.0 * m.peak.sqrt() * o.volume / 50.0;
-    let lift = |p: Point| {
-        if m.peak <= 0.0 || edges.near(p, 1e-9) {
-            return 0.0;
+    // The layers below: what this one stands on, and that surface's slope.
+    let base = |p: Point| stack.below.iter().map(|b| b.lift(p)).sum::<f64>();
+    let base_slope = |p: Point| {
+        if stack.below.is_empty() {
+            return (0.0, 0.0);
         }
-        let d = if edges.near(p, Membrane::RIM * m.step) { edges.distance(p) } else { f64::INFINITY };
-        height * (m.at_rim(p, d).max(0.0) / m.peak).sqrt()
+        let e = 0.02 * cell;
+        let dx = (base(Point::new(p.x + e, p.y)) - base(Point::new(p.x - e, p.y))) / (2.0 * e);
+        let dy = (base(Point::new(p.x, p.y + e)) - base(Point::new(p.x, p.y - e))) / (2.0 * e);
+        (dx, dy)
     };
-    // The front's exact outward normal at `p` (art space, before the view turns it): the lifted
-    // surface z = H·√φ has the normal (−H·∇φ, 2√φ), which turns flat to the side at the outline
-    // (φ = 0). φ is continued past the outline (negative) for the slope there.
-    let gain = if m.peak > 0.0 { height / m.peak.sqrt() } else { 0.0 };
+    let own = |p: Point| puff.lift(p);
+    let lift = |p: Point| own(p) + base(p);
+    // The front's exact outward normal at `p` (art space, before the view turns it), from φ and
+    // its slope ([`Puff::normal`]); a stacked layer adds the slope of the surface it stands on.
+    // φ is continued past the outline (negative) for the slope there.
     // Distances for the normals come from the curves flattened 64 times finer, in as many pieces
     // as that takes: the distance to a polyline turns its direction a step at each corner, and a
     // tight highlight or a mirror's reflection shows each step as a streak across the rim. (A
@@ -1540,7 +1668,7 @@ pub fn inflate_mapped(path: &PathData, bounds: Rect, options: Inflate, view: Vie
         .flatten()
         .filter(|r| !r.is_empty());
     let fine = fine_rings.as_ref().map(|r| Edges::new(r));
-    let (smooth_rings, smooth_edges) = (fine_rings.as_ref().unwrap_or(&rings), fine.as_ref().unwrap_or(&edges));
+    let (smooth_rings, smooth_edges) = (fine_rings.as_ref().unwrap_or(rings), fine.as_ref().unwrap_or(edges));
     // The mesh's points lie in the shape as flattened coarsely, which is within that flattening's
     // tolerance of the fine one: a point farther than that from the fine outline is inside it,
     // with no need to test (a test runs through every edge).
@@ -1560,14 +1688,15 @@ pub fn inflate_mapped(path: &PathData, bounds: Rect, options: Inflate, view: Vie
         let signed = |q: Point| signed(q, inside, rim);
         let gx = (signed(Point::new(p.x + e, p.y)) - signed(Point::new(p.x - e, p.y))) / (2.0 * e);
         let gy = (signed(Point::new(p.x, p.y + e)) - signed(Point::new(p.x, p.y - e))) / (2.0 * e);
-        let rise = if edges.near(p, 1e-9) { 0.0 } else { 2.0 * signed(p).max(0.0).sqrt() };
-        let n = V3(-gain * gx, -gain * gy, rise);
+        let (ax, ay, r) = puff.normal(signed(p), gx, gy, edges.near(p, 1e-9));
+        let (bx, by) = base_slope(p);
+        let n = V3(ax - r * bx, ay - r * by, r);
         if n.dot(n) > 1e-24 && n.0.is_finite() && n.1.is_finite() { n.unit() } else { V3(0.0, 0.0, 1.0) }
     };
-    let camera = Camera::new(view, bounds, o.depth + 2.0 * height);
+    let camera = Camera::new(view, bounds, stack.extent);
     // Without its back cap the object is a shell open behind, its inside showing.
     let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![], casters: vec![], smooth: vec![], hidden: vec![] };
-    let half = o.depth / 2.0;
+    let half = stack.half;
     // The back: turned and scaled by the twist and taper, its puff too.
     let back_turn = Turn::new(bounds, o.twist, o.taper, 1.0);
     // The grid's cells, those the surface rises steeply across (near the outline) cut into
@@ -1582,15 +1711,15 @@ pub fn inflate_mapped(path: &PathData, bounds: Rect, options: Inflate, view: Vie
     let base = |i: usize, j: usize| Rect::from_points(at(i * FINE, j * FINE), at((i + 1) * FINE, (j + 1) * FINE));
     // The shape's part of a rectangle, as rings.
     // Rings that cross each other are cut ring by ring instead, and joined by the fill rule.
-    let simple = !rings_cross(&rings, &edges);
+    let simple = !rings_cross(rings, edges);
     let cut = |r: Rect| -> Vec<Vec<Point>> {
         // A cell no edge crosses is wholly inside the shape or wholly outside it.
         if !edges.touch(r) {
             let corners = vec![Point::new(r.x0, r.y0), Point::new(r.x1, r.y0), Point::new(r.x1, r.y1), Point::new(r.x0, r.y1)];
-            return if filled(&rings, r.center()) { vec![corners] } else { vec![] };
+            return if filled(rings, r.center()) { vec![corners] } else { vec![] };
         }
         if simple {
-            return cut_cell(&rings, r);
+            return cut_cell(rings, r);
         }
         let pieces: Vec<Vec<Point>> = rings.iter().map(|ring| clip(ring, r)).filter(|c| !c.is_empty()).collect();
         if pieces.iter().map(|p| signed_area(p)).sum::<f64>() <= 1e-9 * r.area() {
@@ -1605,7 +1734,7 @@ pub fn inflate_mapped(path: &PathData, bounds: Rect, options: Inflate, view: Vie
     let levels: Vec<u32> = (0..nx * ny)
         .map(|k| {
             let pieces = cut(base(k % nx, k / nx));
-            let (lo, hi) = pieces.iter().flatten().map(|q| lift(*q)).fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), h| (lo.min(h), hi.max(h)));
+            let (lo, hi) = pieces.iter().flatten().map(|q| own(*q)).fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), h| (lo.min(h), hi.max(h)));
             let rise = if pieces.is_empty() { 0.0 } else { (hi - lo) / cell };
             if rise > 6.0 {
                 2
@@ -1732,7 +1861,7 @@ pub fn inflate_mapped(path: &PathData, bounds: Rect, options: Inflate, view: Vie
     if o.depth > 0.0 {
         // The sides, cut into slices that follow a twist or taper.
         let slices = if o.twist != 0.0 || o.taper != 1.0 { ((o.twist.abs() / 6.0).ceil() as usize).clamp(8, 64) } else { 1 };
-        for ring in &rings {
+        for ring in rings {
             let at = |k: usize| -> Vec<V3> {
                 let t = k as f64 / slices as f64;
                 let turn = Turn::new(bounds, o.twist, o.taper, t);

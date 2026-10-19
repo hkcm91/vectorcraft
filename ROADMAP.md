@@ -127,6 +127,7 @@ Ranked; detail in [docs/roadmap.md](docs/roadmap.md) and [docs/gaps.md](docs/gap
 
 | Date | What landed |
 |---|---|
+| 2026-10-19 | 3D and Materials: Inflate gets a **Pillow** option (softer, cushion-like: a seam at the edge, a plump level top, pinched corners) and works on a **group**, puffing each shape on the one below it so nested shapes stack as cushions. Our own extensions. |
 | 2026-10-19 | 3D and Materials: **Effect › 3D and Materials › Materials…** works: it opens the 3D dialog on its Material tab, editing the object's 3D effect or adding a flat Rotate (like the panel's Plane type). Menu stubs 22 → 21. |
 | 2026-10-18 | 3D and Materials: graphics take a **Finish**: Matte (new graphics) lights them as print, so a white logo on chrome reads as white paint, not dark metal, or Surface for the surface's own gloss or metal. Rotate takes graphics on its top fill and Revolve wraps them round its surface like a label. Revolve's cut ends keep holes drawn in the profile. Score unchanged. |
 | 2026-10-18 | 3D and Materials: Revolve takes **Cap** (Solid for new effects: an open profile closed against its axis, a lid where its ends turn, a partial turn's cut ends filled), and Extrude & Bevel and Inflate lay the document's symbols on their front surface (a logo on a badge), placed, scaled and turned, bent by the puff and lit with the surface. 3D ~42% → ~45% (estimated). |

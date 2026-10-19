@@ -5,8 +5,8 @@ live effect: the source path stays editable, the effect draws the shaded surface
 shaded pixel by pixel and clipped to the surface's vector outline; otherwise shaded vector faces), and SVG/PDF
 export, native saves and **Object › Expand Appearance** use the same evaluator.
 
-Select a path or compound path, then choose **Effect › 3D and Materials › Extrude & Bevel…**, **Inflate…** or
-**Rotate…**. The options dialog opens beside the artboard with tabs:
+Select a path or compound path (for Inflate, a group of them too), then choose **Effect › 3D and Materials ›
+Extrude & Bevel…**, **Inflate…** or **Rotate…**. The options dialog opens beside the artboard with tabs:
 
 - **Object** (Extrude & Bevel and Inflate): the shape's own options, below.
 - **Rotation**: a **Presets** menu, **Rotation X/Y/Z** (−180° to 180°) and **Perspective**. The rotation rings
@@ -49,7 +49,15 @@ middle.
 | Taper | 1–100 %: the back's size against the front's; a puffed back is lower in proportion. |
 | Cap | **Solid** closes the back; **Hollow** leaves it off, so the inflated front is a shell open behind, its inside showing. The public documentation lists Cap for every 3D type without saying what it means for Inflate; this is our reading. |
 | Volume | 0–100 %. The surface is a membrane under even pressure, held along the outline (and around holes): it rises vertically from the edge and rounds smoothly inside, without creases along the shape's middle. At 50 % a circle becomes a half sphere; 100 % puffs twice as high, 0 % is flat. |
+| Pillow | 0–100 % (our own option). How soft the puff is: at 0 % a dome that rises straight up from the outline; at 100 % a pillow, its outline a seam the surface rises from at an angle, plump and level across the top, its corners pinched in like a cushion's. In between, a blend of the two. The height at the middle is the same. |
 | Both sides | The back puffs out too; otherwise it is flat. |
+
+**On a group** (our own extension), Inflate puffs every path and compound path in it as a layer, bottom first,
+each in its own top fill (else top stroke), up to 16. Where a layer lies inside the one below it, it rises from
+that layer's surface and meets it at its own outline, so nested shapes (a star on a disc on a square) stack as
+cushions on each other and turn together about the centre of the whole group. Depth, back and sides are the bottom
+layer's; graphics go on the top one; the options apply to every layer. The heights add up, so a group usually wants
+a lower Volume (20–25 %) than a single shape for a badge-like look; at a steep angle a tall stack visibly leans.
 
 The surface is cut into a grid of 48 facets across the larger side (24 in a draft preview), halved or quartered where it rises steeply near the outline, each cut to the shape. A cell the outline leaves and comes back into is cut into separate parts, and neighbouring cells meet at exactly the same points along their shared sides, so the surface is watertight: no cracks or slivers along its rim. (Outlines whose subpaths cross each other are cut subpath by subpath and joined by the nonzero fill rule.) With smooth shading, each point's normal comes from the surface's height field itself (solved on a grid twice as fine as the facets, and near the outline from the exact distance to it), so mirror finishes reflect cleanly across the steep rim.
 

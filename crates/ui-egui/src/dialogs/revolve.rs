@@ -179,6 +179,7 @@ fn solid_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog, id: &
             number(ui, d, "taper", tl!("Taper"), (1.0, 100.0), "%", 1, None);
             choice(ui, d, "cap", c3("Cap"), &[(json!(true), c3("Solid")), (json!(false), c3("Hollow"))]);
             number(ui, d, "volume", tl!("Volume"), (0.0, 100.0), "%", 1, None);
+            number(ui, d, "pillow", tl!("Pillow"), (0.0, 100.0), "%", 1, None);
             toggle(ui, d, "bothSides", tl!("Both sides"), false);
         }
     } else {

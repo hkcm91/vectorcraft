@@ -192,6 +192,64 @@ fn inflate_covers_the_shape_and_puffs_by_the_volume() {
     assert!(thick(Inflate { volume: 0.0, depth: 10.0, ..Inflate::default() }) <= 10.0 + 1e-6);
 }
 
+fn disc(cx: f64, cy: f64, r: f64) -> BezPath {
+    let mut c = BezPath::new();
+    c.extend(vectorcraft_geom::kurbo::Shape::path_elements(&vectorcraft_geom::kurbo::Circle::new((cx, cy), r), 0.01));
+    c
+}
+
+#[test]
+fn a_pillow_rises_from_a_seam_at_an_angle_and_is_plump_and_level_on_top() {
+    let (p, b) = shape(&disc(100.0, 100.0, 50.0));
+    let puff = |pillow: f64| Puff::solve(&p, b, Inflate { pillow, ..Inflate::default() }).unwrap().unwrap();
+    let (dome, pillow) = (puff(0.0), puff(100.0));
+    let at = |f: &Puff, rho: f64| f.lift(Point::new(100.0 + 50.0 * rho, 100.0));
+    // The same height at the middle, the half sphere's radius.
+    assert!(close(at(&dome, 0.0), 50.0, 1.0) && close(at(&pillow, 0.0), 50.0, 1.0), "{} {}", at(&dome, 0.0), at(&pillow, 0.0));
+    // Plumper across the top, lower towards the seam.
+    assert!(at(&pillow, 0.4) > at(&dome, 0.4) + 1.0, "{} {}", at(&pillow, 0.4), at(&dome, 0.4));
+    assert!(at(&pillow, 0.97) < at(&dome, 0.97) - 3.0, "{} {}", at(&pillow, 0.97), at(&dome, 0.97));
+    // At the seam a dome stands straight up (its height grows as the root of the way in), a
+    // pillow leans out at an angle (its height grows with the way in): twice as far in, a dome is
+    // √2 as high, a pillow twice.
+    let growth = |f: &Puff| at(f, 1.0 - 1.0 / 50.0) / at(f, 1.0 - 0.5 / 50.0);
+    assert!(close(growth(&dome), 2f64.sqrt(), 0.1), "{}", growth(&dome));
+    assert!(close(growth(&pillow), 2.0, 0.1), "{}", growth(&pillow));
+    // A square pillow's corners are pinched: lower there than along its sides at the same inset.
+    let (sq, r) = shape(&square(0.0, 0.0, 100.0));
+    let s = Puff::solve(&sq, r, Inflate { pillow: 100.0, ..Inflate::default() }).unwrap().unwrap();
+    assert!(s.lift(Point::new(12.0, 12.0)) < 0.8 * s.lift(Point::new(50.0, 12.0)));
+}
+
+#[test]
+fn stacked_layers_rise_from_the_surface_below_them() {
+    let (base, _) = shape(&disc(100.0, 100.0, 50.0));
+    let (upper, _) = shape(&disc(100.0, 100.0, 20.0));
+    let b = Rect::new(50.0, 50.0, 150.0, 150.0);
+    let side = View { rotation_y: 90.0, ..front() };
+    let o = Inflate::default();
+    let alone = inflate(&base, b, o, side).unwrap();
+    let stack = inflate_stack(&[base.clone(), upper.clone()], b, o, side, &[]).unwrap();
+    assert_eq!(stack.len(), 2);
+    // The bottom layer is drawn as on its own (only its depth order, framed for the whole stack,
+    // differs).
+    let outlines = |f: &[Facet]| f.iter().map(|f| f.contours.clone()).collect::<Vec<_>>();
+    assert_eq!(outlines(&stack[0].facets), outlines(&alone));
+    // From the side the top layer stands on the bottom's peak: their heights add.
+    let top = extent(&stack[1].facets);
+    let small = extent(&inflate(&upper, b, o, side).unwrap()).width();
+    // It rises from the bottom's surface under its rim (0.4 of the way out on a half sphere of
+    // 50) to the bottom's peak plus its own height.
+    let rim = 50.0 * (1.0 - 0.4f64 * 0.4).sqrt();
+    assert!(close(top.width(), 50.0 + small - rim, 2.0), "{} vs {}", top.width(), 50.0 + small - rim);
+    let (lo, hi) = (extent(&alone).x0.min(extent(&alone).x1), top.x0.max(top.x1));
+    assert!(close(hi - lo, 50.0 + small, 3.0), "{} vs {}", hi - lo, 50.0 + small);
+    // Straight on, the top layer covers its own disc only, over the bottom.
+    let f = inflate_stack(&[base, upper], b, o, front(), &[]).unwrap();
+    assert!(close(area(&f[1].facets), std::f64::consts::PI * 400.0, 20.0), "{}", area(&f[1].facets));
+    assert!(inflate_stack(&vec![PathData::default(); MAX_LAYERS + 1], b, o, front(), &[]).is_err());
+}
+
 #[test]
 fn inflate_leaves_holes_open() {
     let mut b = square(0.0, 0.0, 100.0);
@@ -222,7 +280,16 @@ fn malformed_and_degenerate_input_is_bounded() {
         inflate(
             &p,
             b,
-            Inflate { depth: -5.0, volume: f64::NAN, both_sides: true, twist: f64::INFINITY, taper: f64::NAN, cap: true, draft: false },
+            Inflate {
+                depth: -5.0,
+                volume: f64::NAN,
+                pillow: f64::NAN,
+                both_sides: true,
+                twist: f64::INFINITY,
+                taper: f64::NAN,
+                cap: true,
+                draft: false
+            },
             front()
         )
         .is_ok()
