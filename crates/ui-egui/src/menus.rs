@@ -350,6 +350,12 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "",
         "{effect: id, index?: int (edit that applied effect in place, prefilled; OK runs effect.setParams), item?: appearance item index|null (the fill/stroke whose effects, null the object's; default: the Appearance panel's active item)} open the effect's dialog with live preview; without `index`, an effect already in that list first opens `effectExists` (confirm edits it, discard adds another) → {pending: \"effectExists\"}",
     ),
+    (
+        "effect.materials",
+        "Materials…",
+        "",
+        "{item?: appearance item index|null (as effect.dialog)} open the 3D dialog on its Material tab: the last 3D effect already in that list is edited in place, else Rotate is added face on (rotationX/Y/Z 0), so the art stays flat and takes only the material and lights",
+    ),
     ("ui.paramDialog", "Command Dialog", "", "{command, label?, params} open a parameter dialog for any command"),
     (
         "ui.recolorDialog",
@@ -1270,6 +1276,7 @@ pub fn run_ui_command(app: &mut VectorcraftApp, id: &str, p: &Value) -> Option<R
         },
         "tool.setOption" => app.session.set_tool_option_cmd(p),
         "effect.dialog" => crate::dialogs::open_effect_dialog(app, p),
+        "effect.materials" => crate::dialogs::open_materials(app, p),
         "ui.recolorDialog" => crate::dialogs::recolor::open(app, p),
         "ui.cropImage" if !selected_image(app, |_| true) => Err("select an image".into()),
         "ui.cropImage" => {
@@ -1998,7 +2005,7 @@ pub fn enabled(app: &VectorcraftApp, id: &str) -> bool {
         id if id.starts_with("view.goto") => {
             id["view.goto".len()..].parse::<usize>().is_ok_and(|n| n >= 1 && app.session.active().is_some_and(|d| n <= d.doc.views.len()))
         }
-        "effect.dialog" | "ui.recolorDialog" => app.session.active().is_some_and(|d| !d.selection.is_empty()),
+        "effect.dialog" | "effect.materials" | "ui.recolorDialog" => app.session.active().is_some_and(|d| !d.selection.is_empty()),
         "ui.cropImage" => selected_image(app, |_| true),
         "effect.applyLast" | "effect.last" => app.last_effect.is_some() && app.session.active().is_some_and(|d| !d.selection.is_empty()),
         "file.export.pdf" | "ui.savePdfDialog" | "ui.fileInfoDialog" | "ui.rasterEffectsSettingsDialog" => app.session.active().is_some(),
@@ -3527,13 +3534,14 @@ fn effect_menu() -> Vec<Item> {
         } else {
             let mut items = items;
             if sub_name == "3D and Materials" {
-                // In the panel's order of 3D types, then Materials (not built yet).
+                // In the panel's order of 3D types, then Materials (a flat Rotate, or the 3D effect
+                // already applied, on its Material tab).
                 let rank = |label: &str| ["Extrude & Bevel…", "Revolve…", "Inflate…", "Rotate…"].iter().position(|l| *l == label).unwrap_or(9);
                 items.sort_by_key(|i| match i {
                     Item::Cmd(label, ..) => rank(label),
                     _ => 9,
                 });
-                items.push(todo("Materials…"));
+                items.push(c("Materials…", "effect.materials"));
             }
             out.push(sub(sub_name, items));
         }

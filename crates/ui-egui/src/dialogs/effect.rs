@@ -91,6 +91,30 @@ pub fn open(app: &mut VectorcraftApp, p: &Value) -> Result<Value, String> {
     Ok(Value::Null)
 }
 
+/// `effect.materials {item?}` (Effect → 3D and Materials → Materials…): the 3D dialog on its
+/// Material tab. A 3D effect already in the list is edited in place (the last one, Revolve
+/// included); without one, Rotate is added face on (no turn), so the art stays flat and only
+/// takes the material and lights.
+pub fn open_materials(app: &mut VectorcraftApp, p: &Value) -> Result<Value, String> {
+    let target = p.get("item").cloned().unwrap_or_else(|| json!(app.session.appearance_item()));
+    let applied = target_effects(app, &target);
+    let existing = applied.iter().rposition(|e| vectorcraft_effects::is_three_d(&e.id));
+    let mut args = json!({ "effect": vectorcraft_effects::ROTATE, "item": target });
+    if let Some(k) = existing {
+        args["effect"] = json!(applied.get(k).map(|e| e.id.as_str()).unwrap_or_default());
+        args["index"] = json!(k);
+    }
+    open(app, &args)?;
+    let Some(d) = app.ui.dialog.as_mut() else { return Ok(Value::Null) };
+    if existing.is_none() {
+        for axis in ["rotationX", "rotationY", "rotationZ"] {
+            d.fields.insert(axis.into(), json!(0.0));
+        }
+    }
+    d.fields.insert("__tab".into(), json!("material"));
+    Ok(Value::Null)
+}
+
 /// The effects of the first selected object that `item` (an index or null) addresses.
 fn target_effects(app: &VectorcraftApp, item: &Value) -> Vec<vectorcraft_doc::Effect> {
     let Some(st) = app.session.active() else { return vec![] };

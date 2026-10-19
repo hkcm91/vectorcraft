@@ -237,6 +237,47 @@ fn effect_dialog_applies_to_its_appearance_item() {
 }
 
 #[test]
+fn materials_adds_a_flat_rotate_or_edits_the_3d_effect_on_its_material_tab() {
+    let mut app = app();
+    let id = app.run("shape.rectangle", json!({"x": 10, "y": 10, "width": 50, "height": 50})).unwrap()["id"].as_u64().unwrap();
+    app.run("select.all", json!({})).unwrap();
+    let node = |app: &VectorcraftApp| app.session.doc().unwrap().doc.node(vectorcraft_doc::NodeId(id)).unwrap().clone();
+    // No 3D effect yet: a Rotate that doesn't turn, opened on the Material tab.
+    app.run("effect.materials", json!({"item": null})).unwrap();
+    let d = app.ui.dialog.as_ref().unwrap();
+    assert_eq!((d.str("__effect"), d.str("__tab")), ("threeD.rotate".to_string(), "material".to_string()));
+    app.ui.dialog.as_mut().unwrap().fields.insert("metallic".into(), json!(80));
+    frame(&mut app, Default::default());
+    confirm(&mut app).unwrap();
+    let fx = node(&app).appearance.effects.clone();
+    assert_eq!(fx.len(), 1);
+    assert_eq!(fx[0].id, "threeD.rotate");
+    for axis in ["rotationX", "rotationY", "rotationZ"] {
+        assert_eq!(fx[0].params[axis].as_f64(), Some(0.0), "{axis}: face on, the art stays flat");
+    }
+    assert_eq!(fx[0].params["metallic"].as_f64(), Some(80.0));
+    // Again: the applied effect is edited in place, not a second one added.
+    app.run("effect.materials", json!({"item": null})).unwrap();
+    let d = app.ui.dialog.as_ref().unwrap();
+    assert_eq!((d.str("__tab"), d.fields.get("__index").cloned()), ("material".to_string(), Some(json!(0))));
+    app.ui.dialog.as_mut().unwrap().fields.insert("roughness".into(), json!(10));
+    frame(&mut app, Default::default());
+    confirm(&mut app).unwrap();
+    let fx = node(&app).appearance.effects.clone();
+    assert_eq!(fx.len(), 1, "edited, not added");
+    assert_eq!(fx[0].params["roughness"].as_f64(), Some(10.0));
+    // Another 3D type already applied is the one edited, keeping its turn.
+    let mut app2 = self::app();
+    app2.run("shape.rectangle", json!({"x": 10, "y": 10, "width": 50, "height": 50})).unwrap();
+    app2.run("select.all", json!({})).unwrap();
+    app2.run("effect.apply", json!({"effect": "threeD.extrude", "params": {"rotationX": 30}})).unwrap();
+    app2.run("effect.materials", json!({"item": null})).unwrap();
+    let d = app2.ui.dialog.as_ref().unwrap();
+    assert_eq!(d.str("__effect"), "threeD.extrude");
+    assert_eq!(d.fields.get("rotationX").and_then(|v| v.as_f64()), Some(30.0));
+}
+
+#[test]
 fn revolve_dialog_preview_cancel_confirm_and_undo() {
     let mut app = app();
     app.run("path.create", json!({"d":"M150 40 L180 60 L180 140 L150 160"})).unwrap();

@@ -99,7 +99,10 @@ ambient light. The tab shows a preset's name while every light matches it, **Cus
 
 ## Materials
 
-The **Material** tab sets how the surface takes the light, for the clean 3D icons and components of UI work:
+The **Material** tab sets how the surface takes the light, for the clean 3D icons and components of UI work.
+**Effect › 3D and Materials › Materials…** opens it directly: on an object with a 3D effect it edits that effect
+(the last one, Revolve too); on flat art it adds Rotate face on (no turn), so the art stays flat and only takes
+the material, the lights and any graphics, like the panel's Plane type.
 
 - **Highlight** adds a specular highlight per light (Blinn-Phong, `highlight × intensity × colour × (n·h)^k`),
   added on top of the paint, so a highlight can reach white. **Roughness** sets its spread: from a tight polished
