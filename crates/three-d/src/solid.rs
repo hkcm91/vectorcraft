@@ -835,11 +835,40 @@ pub fn extrude_mapped(path: &PathData, bounds: Rect, options: Extrude, view: Vie
     if o.depth <= 0.0 {
         return plane_mapped(path, bounds, view, art);
     }
+    build_extrude(path, bounds, o, view, art, o.depth / 2.0, o.depth)
+}
+
+/// Extrude & Bevel on nested layers (bottom first), each extruded by the full depth and standing
+/// on the front of the one below it, like cut-outs stacked on each other: the stack is `depth`
+/// times the layers deep, centred on the art's plane, and turns as one about the centre of
+/// `bounds` (all the layers'). Each layer has its own bevel, twist and taper; `art` goes on the
+/// top layer's front. One [`Shaded`] per layer, bottom first, to be drawn in that order.
+pub fn extrude_stack(layers: &[PathData], bounds: Rect, options: Extrude, view: View, art: &[Vec<Vec<Point>>]) -> Result<Vec<Shaded>, String> {
+    check_bounds(bounds)?;
+    if layers.len() > MAX_LAYERS {
+        return Err(format!("Extrude & Bevel takes at most {MAX_LAYERS} layers"));
+    }
+    let o = options.sanitized();
+    let top = layers.len().saturating_sub(1);
+    if o.depth <= 0.0 {
+        return layers.iter().enumerate().map(|(k, p)| plane_mapped(p, bounds, view, if k == top { art } else { &[] })).collect();
+    }
+    let extent = o.depth * layers.len() as f64;
+    layers
+        .iter()
+        .enumerate()
+        .map(|(k, p)| build_extrude(p, bounds, o, view, if k == top { art } else { &[] }, -extent / 2.0 + o.depth * (k + 1) as f64, extent))
+        .collect()
+}
+
+/// Extrude & Bevel's solid for `path`, its front `front` points ahead of the art's plane, in a
+/// view framed for `extent` points of depth.
+fn build_extrude(path: &PathData, bounds: Rect, o: Extrude, view: View, art: &[Vec<Vec<Point>>], front: f64, extent: f64) -> Result<Shaded, String> {
     let rings = rings(path, bounds.width().max(bounds.height()), MAX_SOLID_POINTS)?;
-    let camera = Camera::new(view, bounds, o.depth);
+    let camera = Camera::new(view, bounds, extent);
     let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![], casters: vec![], smooth: vec![], hidden: vec![] };
     let steps = steps(&o);
-    let z = |t: f64| o.depth / 2.0 - o.depth * t;
+    let z = |t: f64| front - o.depth * t;
     let ring_at =
         |ring: &[Point], s: &Step| -> Vec<V3> { section(&inset(ring, s.inset), bounds, &o, s.t).iter().map(|p| camera.place(*p, z(s.t))).collect() };
     for ring in &rings {

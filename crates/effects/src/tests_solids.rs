@@ -208,7 +208,7 @@ fn parameters_are_validated_and_lengths_scale_with_the_object() {
 }
 
 #[test]
-fn inflate_on_a_group_puffs_each_layer_in_its_own_paint() {
+fn inflate_and_extrude_on_a_group_stack_each_layer_in_its_own_paint() {
     let shape = |id: u64, x: f64, s: f64, c: Color| {
         let mut b = BezPath::new();
         b.move_to((x, x));
@@ -222,7 +222,7 @@ fn inflate_on_a_group_puffs_each_layer_in_its_own_paint() {
     let mut g = Node::group(NodeId(9), vec![shape(1, 100.0, 100.0, RED), shape(2, 130.0, 40.0, blue)]);
     let p = json!({"rotationX": 0, "rotationY": 0, "rotationZ": 0, "smoothShading": false, "pillow": 100});
     validate_solid(&g, INFLATE, &p).unwrap();
-    assert!(validate_solid(&g, EXTRUDE, &json!({})).is_err(), "only Inflate takes a group");
+    assert!(validate_solid(&g, ROTATE, &json!({})).is_err(), "Rotate doesn't take a group");
     g.appearance = Appearance { effects: vec![fx(INFLATE, p)], ..Default::default() }.into();
     let art = solid_art(&g).unwrap();
     let surfaces = art.children().unwrap();
@@ -238,6 +238,17 @@ fn inflate_on_a_group_puffs_each_layer_in_its_own_paint() {
     let b = surfaces[1].visual_bounds().unwrap();
     assert!((b.x0 - 130.0).abs() < 1.0 && (b.x1 - 170.0).abs() < 1.0, "{b:?}");
     assert_eq!(inflate_options(&json!({"pillow": 40})).pillow, 40.0);
+    // Extrude & Bevel stacks the same layers, each in its own paint, the top one nearest.
+    let extrude = json!({"rotationX": 0, "rotationY": 0, "rotationZ": 0, "smoothShading": false, "depth": 20});
+    validate_solid(&g, EXTRUDE, &extrude).unwrap();
+    assert!(validate_solid(&g, EXTRUDE, &json!({"bevel": "nope"})).is_err());
+    g.appearance = Appearance { effects: vec![fx(EXTRUDE, extrude)], ..Default::default() }.into();
+    let art = solid_art(&g).unwrap();
+    let surfaces = art.children().unwrap();
+    assert_eq!(surfaces.len(), 2);
+    assert!(mean(&surfaces[1])[2] > mean(&surfaces[1])[0], "blue on top");
+    let b = surfaces[1].visual_bounds().unwrap();
+    assert!((b.x0 - 130.0).abs() < 1.0 && (b.x1 - 170.0).abs() < 1.0, "{b:?}");
     assert_eq!(crate::default_params(INFLATE).unwrap()["pillow"], json!(0.0));
 }
 

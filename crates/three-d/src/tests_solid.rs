@@ -251,6 +251,27 @@ fn stacked_layers_rise_from_the_surface_below_them() {
 }
 
 #[test]
+fn extruded_layers_stand_on_each_other() {
+    let (base, b) = shape(&square(0.0, 0.0, 100.0));
+    let (upper, _) = shape(&square(25.0, 25.0, 50.0));
+    let o = Extrude { depth: 20.0, ..Extrude::default() };
+    let side = View { rotation_y: 90.0, ..front() };
+    let stack = extrude_stack(&[base.clone(), upper.clone()], b, o, side, &[]).unwrap();
+    assert_eq!(stack.len(), 2);
+    // From the side: two slabs of 20, one in front of the other, 40 deep in all about the middle.
+    let (lo, hi) = (extent(&stack[0].facets), extent(&stack[1].facets));
+    assert!(close(lo.width(), 20.0, 1e-6) && close(hi.width(), 20.0, 1e-6), "{lo:?} {hi:?}");
+    assert!(close(lo.x0.min(hi.x0), 50.0 - 20.0, 1e-6) && close(lo.x1.max(hi.x1), 50.0 + 20.0, 1e-6), "{lo:?} {hi:?}");
+    assert!(close(lo.x0.max(hi.x0), lo.x1.min(hi.x1), 1e-6), "they meet: {lo:?} {hi:?}");
+    // Straight on, each covers its own square; no depth lays them flat.
+    let f = extrude_stack(&[base.clone(), upper.clone()], b, o, front(), &[]).unwrap();
+    assert_eq!(extent(&f[1].facets), Rect::new(25.0, 25.0, 75.0, 75.0));
+    let flat = extrude_stack(&[base, upper], b, Extrude { depth: 0.0, ..o }, front(), &[]).unwrap();
+    assert!(close(area(&flat[1].facets), 2500.0, 1e-6));
+    assert!(extrude_stack(&vec![PathData::default(); MAX_LAYERS + 1], b, o, front(), &[]).is_err());
+}
+
+#[test]
 fn inflate_leaves_holes_open() {
     let mut b = square(0.0, 0.0, 100.0);
     b.extend(square(30.0, 30.0, 40.0));

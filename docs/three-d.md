@@ -5,7 +5,7 @@ live effect: the source path stays editable, the effect draws the shaded surface
 shaded pixel by pixel and clipped to the surface's vector outline; otherwise shaded vector faces), and SVG/PDF
 export, native saves and **Object › Expand Appearance** use the same evaluator.
 
-Select a path or compound path (for Inflate, a group of them too), then choose **Effect › 3D and Materials ›
+Select a path or compound path (for Extrude & Bevel and Inflate, a group of them too), then choose **Effect › 3D and Materials ›
 Extrude & Bevel…**, **Inflate…** or **Rotate…**. The options dialog opens beside the artboard with tabs:
 
 - **Object** (Extrude & Bevel and Inflate): the shape's own options, below.
@@ -36,6 +36,13 @@ object is where the art was.
 
 Holes stay holes, with walls of their own. Bevels move each corner along its bisector (mitres are limited to four
 times the width), so a bevel wider than a narrow part of the shape folds over itself.
+
+**On a group** (our own extension), Extrude & Bevel extrudes every path and compound path in it as a layer,
+bottom first, each in its own top fill (else top stroke), up to 16. Each layer is the full Depth deep and stands
+on the front of the one below it, like cut-outs stacked on each other: the stack is Depth times the layers deep,
+centred on the art's plane, and turns as one about the centre of the whole group. Every layer takes the same
+bevel, twist and taper; graphics go on the top layer's front. Layers are drawn bottom first, which is right from
+the front and sides; seen from behind, the bottom layer is drawn under the others.
 
 ## Inflate
 

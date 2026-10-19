@@ -114,7 +114,7 @@ fn profile(n: &Node) -> Option<(PathData, FillRule)> {
     }
 }
 
-/// Inflate's layers on a group: its visible paths and compound paths, bottom first, each with
+/// Inflate's and Extrude & Bevel's layers on a group: its visible paths and compound paths, bottom first, each with
 /// its node (for its paint). `None` for anything else, or a group without such a child.
 fn layers(n: &Node) -> Option<Vec<(PathData, &Node)>> {
     let NodeKind::Group { children, clip: false } = &n.kind else { return None };
@@ -140,29 +140,49 @@ fn facets(id: &str, path: &PathData, bounds: Rect, p: &Value, art: &[Vec<Vec<Poi
 /// Validate before a command changes the document; the evaluator bounds loaded files too.
 pub fn validate_solid(n: &Node, id: &str, p: &Value) -> Result<(), String> {
     let label = crate::effect_info(id).map_or("This effect", |e| e.label.trim_end_matches('…'));
-    if id == INFLATE
+    if takes_groups(id)
         && let Some(layers) = layers(n)
     {
+        validate_bevel(p)?;
         crate::lighting::validate(p)?;
         crate::graphics::validate(p)?;
-        let b = layer_bounds(&layers).ok_or("Inflate requires shapes with at least two anchors")?;
+        let b = layer_bounds(&layers).ok_or_else(|| format!("{label} requires shapes with at least two anchors"))?;
         let paths: Vec<PathData> = layers.into_iter().map(|(p, _)| p).collect();
-        return vectorcraft_three_d::inflate_stack(&paths, b, inflate_options(p), view_options(p), &[]).map(|_| ());
+        return stack(id, &paths, b, p, &[]).map(|_| ());
     }
-    let (path, _) = profile(n).ok_or_else(|| match id {
-        INFLATE => format!("{label} currently requires a path, a compound path or a group of them. Convert type and images to paths first."),
-        _ => format!("{label} currently requires a path or compound path. Convert type, images and groups to paths first."),
+    let (path, _) = profile(n).ok_or_else(|| match takes_groups(id) {
+        true => format!("{label} currently requires a path, a compound path or a group of them. Convert type and images to paths first."),
+        false => format!("{label} currently requires a path or compound path. Convert type, images and groups to paths first."),
     })?;
     let b = path.bounds().ok_or_else(|| format!("{label} requires a shape with at least two anchors"))?;
+    validate_bevel(p)?;
+    crate::lighting::validate(p)?;
+    crate::graphics::validate(p)?;
+    facets(id, &path, b, p, &[]).map(|_| ())
+}
+
+fn validate_bevel(p: &Value) -> Result<(), String> {
     if let Some(v) = p.get("bevel")
         && !v.as_str().is_some_and(|s| s == "none" || BevelShape::parse(s).is_some())
     {
         let names: Vec<_> = BevelShape::ALL.iter().map(|b| b.id()).collect();
         return Err(format!("bevel must be none or one of {}", names.join(", ")));
     }
-    crate::lighting::validate(p)?;
-    crate::graphics::validate(p)?;
-    facets(id, &path, b, p, &[]).map(|_| ())
+    Ok(())
+}
+
+/// Does the 3D effect `id` take a group, its shapes as stacked layers?
+fn takes_groups(id: &str) -> bool {
+    id == INFLATE || id == EXTRUDE
+}
+
+/// The stacked solids of effect `id` on `layers` (bottom first), `art` on the top one.
+fn stack(id: &str, layers: &[PathData], bounds: Rect, p: &Value, art: &[Vec<Vec<Point>>]) -> Result<Vec<Shaded>, String> {
+    let view = view_options(p);
+    match id {
+        EXTRUDE => vectorcraft_three_d::extrude_stack(layers, bounds, extrude_options(p), view, art),
+        _ => vectorcraft_three_d::inflate_stack(layers, bounds, inflate_options(p), view, art),
+    }
 }
 
 /// One surface as a group with the paint's opacity and blend mode (so overlapping facets don't
@@ -300,8 +320,9 @@ pub fn solid_art_in(n: &Node, doc: Option<&Document>) -> Option<Node> {
     crate::memo::remember_with(2, n, &used, || evaluate(n, &symbol))
 }
 
-/// Inflate on a group's layers ([`layers`]): each puffed on those below it, in its own top fill
-/// (else top stroke), graphics on the top one; the effects after it act on the whole.
+/// Inflate or Extrude & Bevel on a group's layers ([`layers`]): each puffed on, or standing on,
+/// those below it, in its own top fill (else top stroke), graphics on the top one; the effects
+/// after it act on the whole.
 fn evaluate_stack(n: &Node, index: usize, fx: &Effect, layers: &[(PathData, &Node)], symbol: Symbols) -> Option<Node> {
     let b = layer_bounds(layers)?;
     let p = crate::lighting::drawing_params(&fx.id, &fx.params);
@@ -314,7 +335,7 @@ fn evaluate_stack(n: &Node, index: usize, fx: &Effect, layers: &[(PathData, &Nod
     let pieces = crate::graphics::pieces(&crate::graphics::graphics(&p), symbol, top_path, rule, b);
     let art: Vec<Vec<Vec<Point>>> = pieces.iter().map(|piece| piece.rings.clone()).collect();
     let paths: Vec<PathData> = layers.iter().map(|(p, _)| p.clone()).collect();
-    let stack = vectorcraft_three_d::inflate_stack(&paths, b, inflate_options(&p), view_options(&p), &art).ok()?;
+    let stack = stack(&fx.id, &paths, b, &p, &art).ok()?;
     let (mut shadow, mut contact, mut strength) = (vec![], vec![], 0.0f64);
     let mut surfaces = vec![];
     let last = stack.len().saturating_sub(1);
@@ -337,7 +358,7 @@ fn evaluate_stack(n: &Node, index: usize, fx: &Effect, layers: &[(PathData, &Nod
     children.extend(surfaces);
     let mut art = n.clone();
     art.kind = NodeKind::Group { children, clip: false };
-    // Geometry effects before Inflate would reshape each layer; on a group they are left out.
+    // Geometry effects before the solid would reshape each layer; on a group they are left out.
     let remaining = n.appearance.effects.iter().enumerate().filter(|(i, e)| *i != index && !(is_geometry(&e.id) && *i < index));
     art.appearance = Appearance { effects: remaining.map(|(_, e)| e.clone()).collect(), ..Default::default() }.into();
     Some(art)
@@ -345,7 +366,7 @@ fn evaluate_stack(n: &Node, index: usize, fx: &Effect, layers: &[(PathData, &Nod
 
 fn evaluate(n: &Node, symbol: Symbols) -> Option<Node> {
     if let Some((index, fx)) = solid(&n.appearance.effects)
-        && fx.id == INFLATE
+        && takes_groups(&fx.id)
         && let Some(layers) = layers(n)
     {
         return evaluate_stack(n, index, fx, &layers, symbol);
