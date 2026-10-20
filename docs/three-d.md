@@ -5,7 +5,7 @@ live effect: the source path stays editable, the effect draws the shaded surface
 shaded pixel by pixel and clipped to the surface's vector outline; otherwise shaded vector faces), and SVG/PDF
 export, native saves and **Object › Expand Appearance** use the same evaluator.
 
-Select a path or compound path (for Extrude & Bevel and Inflate, a group of them too), then choose **Effect › 3D and Materials ›
+Select a path, a compound path or a group of them, then choose **Effect › 3D and Materials ›
 Extrude & Bevel…**, **Inflate…** or **Rotate…**. The options dialog opens beside the artboard with tabs:
 
 - **Object** (Extrude & Bevel and Inflate): the shape's own options, below.
@@ -73,6 +73,11 @@ The surface is cut into a grid of 48 facets across the larger side (24 in a draf
 The flat art turned in 3D about the centre of its bounds. Every fill and stroke is turned with its own paint (a
 stroke as its outline, so it foreshortens with the art) and shaded as one plane; a plane has two sides, so its
 back shows when it is turned past 90°.
+
+
+**On a group** (our own extension), Rotate turns every path and compound path in it, each with all its fills and
+strokes in their own paints, as one flat sheet about the centre of the whole group, bottom first. Graphics go on
+the top shape's top fill.
 
 ## Rotation presets
 

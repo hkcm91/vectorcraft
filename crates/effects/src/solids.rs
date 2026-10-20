@@ -150,10 +150,8 @@ pub fn validate_solid(n: &Node, id: &str, p: &Value) -> Result<(), String> {
         let paths: Vec<PathData> = layers.into_iter().map(|(p, _)| p).collect();
         return stack(id, &paths, b, p, &[]).map(|_| ());
     }
-    let (path, _) = profile(n).ok_or_else(|| match takes_groups(id) {
-        true => format!("{label} currently requires a path, a compound path or a group of them. Convert type and images to paths first."),
-        false => format!("{label} currently requires a path or compound path. Convert type, images and groups to paths first."),
-    })?;
+    let (path, _) = profile(n)
+        .ok_or_else(|| format!("{label} currently requires a path, a compound path or a group of them. Convert type and images to paths first."))?;
     let b = path.bounds().ok_or_else(|| format!("{label} requires a shape with at least two anchors"))?;
     validate_bevel(p)?;
     crate::lighting::validate(p)?;
@@ -173,15 +171,31 @@ fn validate_bevel(p: &Value) -> Result<(), String> {
 
 /// Does the 3D effect `id` take a group, its shapes as stacked layers?
 fn takes_groups(id: &str) -> bool {
-    id == INFLATE || id == EXTRUDE
+    SOLIDS.contains(&id)
 }
 
-/// The stacked solids of effect `id` on `layers` (bottom first), `art` on the top one.
+/// The stacked solids of effect `id` on `layers` (bottom first), `art` on the top one. Rotate
+/// turns them all in one plane.
 fn stack(id: &str, layers: &[PathData], bounds: Rect, p: &Value, art: &[Vec<Vec<Point>>]) -> Result<Vec<Shaded>, String> {
     let view = view_options(p);
     match id {
         EXTRUDE => vectorcraft_three_d::extrude_stack(layers, bounds, extrude_options(p), view, art),
-        _ => vectorcraft_three_d::inflate_stack(layers, bounds, inflate_options(p), view, art),
+        INFLATE => vectorcraft_three_d::inflate_stack(layers, bounds, inflate_options(p), view, art),
+        _ => {
+            if layers.len() > vectorcraft_three_d::MAX_LAYERS {
+                return Err(format!("Rotate takes at most {} layers", vectorcraft_three_d::MAX_LAYERS));
+            }
+            let top = layers.len().saturating_sub(1);
+            layers.iter().enumerate().map(|(k, l)| vectorcraft_three_d::plane_mapped(l, bounds, view, if k == top { art } else { &[] })).collect()
+        }
+    }
+}
+
+/// A shape's fill rule (nonzero for anything but a path or compound path).
+fn rule_of(n: &Node) -> FillRule {
+    match &n.kind {
+        NodeKind::Path { rule, .. } | NodeKind::Compound { rule, .. } => *rule,
+        _ => FillRule::NonZero,
     }
 }
 
@@ -322,35 +336,55 @@ pub fn solid_art_in(n: &Node, doc: Option<&Document>) -> Option<Node> {
 
 /// Inflate or Extrude & Bevel on a group's layers ([`layers`]): each puffed on, or standing on,
 /// those below it, in its own top fill (else top stroke), graphics on the top one; the effects
-/// after it act on the whole.
+/// after it act on the whole. Rotate turns every fill and stroke of each layer, as on one object,
+/// all about the group's centre, graphics on the top layer's top fill.
 fn evaluate_stack(n: &Node, index: usize, fx: &Effect, layers: &[(PathData, &Node)], symbol: Symbols) -> Option<Node> {
     let b = layer_bounds(layers)?;
     let p = crate::lighting::drawing_params(&fx.id, &fx.params);
     let size = b.width().max(b.height());
     let (top_path, top) = layers.last()?;
-    let rule = match &top.kind {
-        NodeKind::Path { rule, .. } | NodeKind::Compound { rule, .. } => *rule,
-        _ => FillRule::NonZero,
-    };
-    let pieces = crate::graphics::pieces(&crate::graphics::graphics(&p), symbol, top_path, rule, b);
+    let pieces = crate::graphics::pieces(&crate::graphics::graphics(&p), symbol, top_path, rule_of(top), b);
     let art: Vec<Vec<Vec<Point>>> = pieces.iter().map(|piece| piece.rings.clone()).collect();
-    let paths: Vec<PathData> = layers.iter().map(|(p, _)| p.clone()).collect();
-    let stack = stack(&fx.id, &paths, b, &p, &art).ok()?;
+    let side = crate::lighting::shading_side(&p);
+    let painted = |layer: &Node| -> Vec<AppearanceItem> { layer.appearance.items.iter().filter(|i| crate::paints(i)).cloned().collect() };
+    let top_item = |items: &[AppearanceItem]| items.iter().rposition(|i| matches!(i, AppearanceItem::Fill(_))).or(items.len().checked_sub(1));
+    // Each surface: its shading, paint and whether the graphics lie on it.
+    let mut parts: Vec<(Shaded, AppearanceItem, bool)> = vec![];
+    let last = layers.len().saturating_sub(1);
+    if fx.id == ROTATE {
+        if layers.len() > vectorcraft_three_d::MAX_LAYERS {
+            return None;
+        }
+        for (k, (path, layer)) in layers.iter().enumerate() {
+            let items = painted(layer);
+            let on = if k == last { top_item(&items) } else { None };
+            for (j, item) in items.into_iter().enumerate() {
+                let laid = Some(j) == on;
+                let s = facets(ROTATE, &region(path, rule_of(layer), &item), b, &p, if laid { &art } else { &[] }).ok()?;
+                parts.push((s, item, laid));
+            }
+        }
+    } else {
+        let paths: Vec<PathData> = layers.iter().map(|(p, _)| p.clone()).collect();
+        let stack = stack(&fx.id, &paths, b, &p, &art).ok()?;
+        for (k, (s, (_, layer))) in stack.into_iter().zip(layers).enumerate() {
+            let items = painted(layer);
+            // An unpainted layer still lifts those above it; it just isn't drawn.
+            let Some(item) = top_item(&items).and_then(|j| items.into_iter().nth(j)) else { continue };
+            parts.push((s, item, k == last));
+        }
+    }
     let (mut shadow, mut contact, mut strength) = (vec![], vec![], 0.0f64);
     let mut surfaces = vec![];
-    let last = stack.len().saturating_sub(1);
-    for (k, (mut s, (_, layer))) in stack.into_iter().zip(layers).enumerate() {
+    for (mut s, item, laid) in parts {
         shadow.extend(s.shadow.take().into_iter().flat_map(|s| s.subpaths));
         if let Some((c, w)) = s.contact.take() {
             contact.extend(c.subpaths);
             strength = strength.max(w);
         }
-        let painted: Vec<&AppearanceItem> = layer.appearance.items.iter().filter(|i| crate::paints(i)).collect();
-        // An unpainted layer still lifts those above it; it just isn't drawn.
-        let Some(item) = painted.iter().rev().find(|i| matches!(i, AppearanceItem::Fill(_))).or_else(|| painted.last()) else { continue };
-        let (paint, opacity, blend) = paint_of(item);
-        let laid: &[crate::graphics::Piece] = if k == last { &pieces } else { &[] };
-        surfaces.push(Arc::new(surface(n, s, &paint, opacity, blend, crate::lighting::shading_side(&p), laid)));
+        let (paint, opacity, blend) = paint_of(&item);
+        let laid: &[crate::graphics::Piece] = if laid { &pieces } else { &[] };
+        surfaces.push(Arc::new(surface(n, s, &paint, opacity, blend, side, laid)));
     }
     let shadow = (!shadow.is_empty()).then(|| PathData::new(shadow));
     let contact = (!contact.is_empty()).then(|| (PathData::new(contact), strength));

@@ -127,6 +127,7 @@ Ranked; detail in [docs/roadmap.md](docs/roadmap.md) and [docs/gaps.md](docs/gap
 
 | Date | What landed |
 |---|---|
+| 2026-10-19 | 3D and Materials: **Rotate** works on a group too, turning all its shapes (every fill and stroke) as one sheet about the group's centre. All three 3D types now take groups. |
 | 2026-10-19 | 3D and Materials: Extrude & Bevel works on a **group** too: each shape is extruded and stands on the front of the one below, like stacked cut-outs, each in its own colour. Our own extension. |
 | 2026-10-19 | 3D and Materials: Inflate gets a **Pillow** option (softer, cushion-like: a seam at the edge, a plump level top, pinched corners) and works on a **group**, puffing each shape on the one below it so nested shapes stack as cushions. Our own extensions. |
 | 2026-10-19 | 3D and Materials: **Effect › 3D and Materials › Materials…** works: it opens the 3D dialog on its Material tab, editing the object's 3D effect or adding a flat Rotate (like the panel's Plane type). Menu stubs 22 → 21. |
