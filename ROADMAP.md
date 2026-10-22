@@ -127,6 +127,7 @@ Ranked; detail in [docs/roadmap.md](docs/roadmap.md) and [docs/gaps.md](docs/gap
 
 | Date | What landed |
 |---|---|
+| 2026-10-22 | 3D and Materials: **Layer Depths** work for Inflate too: each layer stands its own depth up from the one below on walls, then puffs. |
 | 2026-10-22 | 3D and Materials: stacked Extrude & Bevel layers each take their **own depth** (Layer Depths in the dialog, `layerDepths` in commands); untouched layers follow Depth. |
 | 2026-10-19 | 3D and Materials: **Rotate** works on a group too, turning all its shapes (every fill and stroke) as one sheet about the group's centre. All three 3D types now take groups. |
 | 2026-10-19 | 3D and Materials: Extrude & Bevel works on a **group** too: each shape is extruded and stands on the front of the one below, like stacked cut-outs, each in its own colour. Our own extension. |

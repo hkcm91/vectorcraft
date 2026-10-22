@@ -229,7 +229,7 @@ fn stacked_layers_rise_from_the_surface_below_them() {
     let side = View { rotation_y: 90.0, ..front() };
     let o = Inflate::default();
     let alone = inflate(&base, b, o, side).unwrap();
-    let stack = inflate_stack(&[base.clone(), upper.clone()], b, o, side, &[]).unwrap();
+    let stack = inflate_stack(&[base.clone(), upper.clone()], b, o, side, &[], &[]).unwrap();
     assert_eq!(stack.len(), 2);
     // The bottom layer is drawn as on its own (only its depth order, framed for the whole stack,
     // differs).
@@ -245,9 +245,21 @@ fn stacked_layers_rise_from_the_surface_below_them() {
     let (lo, hi) = (extent(&alone).x0.min(extent(&alone).x1), top.x0.max(top.x1));
     assert!(close(hi - lo, 50.0 + small, 3.0), "{} vs {}", hi - lo, 50.0 + small);
     // Straight on, the top layer covers its own disc only, over the bottom.
-    let f = inflate_stack(&[base, upper], b, o, front(), &[]).unwrap();
+    let f = inflate_stack(&[base.clone(), upper.clone()], b, o, front(), &[], &[]).unwrap();
     assert!(close(area(&f[1].facets), std::f64::consts::PI * 400.0, 20.0), "{}", area(&f[1].facets));
-    assert!(inflate_stack(&vec![PathData::default(); MAX_LAYERS + 1], b, o, front(), &[]).is_err());
+    assert!(inflate_stack(&vec![PathData::default(); MAX_LAYERS + 1], b, o, front(), &[], &[]).is_err());
+    // A depth per layer: the bottom's is its flat side, so the whole stack is that much thicker;
+    // the top one stands its depth up from the surface below on walls before it puffs.
+    let thick = |f: &[Shaded]| {
+        let (a, z) = (extent(&f[0].facets), extent(&f[1].facets));
+        a.x1.max(z.x1) - a.x0.min(z.x0)
+    };
+    let plain = thick(&stack);
+    let raised = inflate_stack(&[base.clone(), upper.clone()], b, o, side, &[], &[0.0, 15.0]).unwrap();
+    assert!(close(thick(&raised), plain + 15.0, 1.0), "{} vs {plain}", thick(&raised));
+    assert!(close(extent(&raised[1].facets).width(), extent(&stack[1].facets).width() + 15.0, 1.0));
+    let deep = inflate_stack(&[base, upper], b, o, side, &[], &[20.0]).unwrap();
+    assert!(close(thick(&deep), plain + 20.0, 1.0), "{} vs {plain}", thick(&deep));
 }
 
 #[test]

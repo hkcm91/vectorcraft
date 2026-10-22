@@ -278,7 +278,7 @@ fn materials_adds_a_flat_rotate_or_edits_the_3d_effect_on_its_material_tab() {
 }
 
 #[test]
-fn extrude_on_a_group_offers_a_depth_per_layer() {
+fn extrude_and_inflate_on_a_group_offer_a_depth_per_layer() {
     let mut app = app();
     for (x, s) in [(10, 120), (30, 80), (50, 40)] {
         app.run("shape.rectangle", json!({"x": x, "y": x, "width": s, "height": s})).unwrap();
@@ -302,6 +302,12 @@ fn extrude_on_a_group_offers_a_depth_per_layer() {
     };
     assert_eq!(g.appearance.effects[0].params["layerDepths"], json!([10, 30, 60]));
     assert!(vectorcraft_effects::solid_art(&g).is_some());
+    // Inflate offers the same, on its Object tab.
+    app.run("effect.dialog", json!({"effect": "threeD.inflate", "item": null})).unwrap();
+    app.ui.dialog.as_mut().unwrap().fields.insert("__tab".into(), json!("object"));
+    frame(&mut app, Default::default());
+    let d = app.ui.dialog.as_ref().unwrap();
+    assert!((0..3).all(|k| d.fields.contains_key(&format!("__layerDepth{k}"))), "a field per layer");
 }
 
 #[test]

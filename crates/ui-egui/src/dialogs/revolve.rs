@@ -170,16 +170,17 @@ fn solid_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog, id: &
         graphics_controls(app, ui, d);
     } else if object && d.str("__tab") != "rotation" {
         let unit = app.session.general_unit();
+        let layers = app
+            .session
+            .active()
+            .and_then(|doc| doc.selection.objects.first().and_then(|id| doc.doc.node(*id)))
+            .map_or(0, vectorcraft_effects::layer_count);
         if id == EXTRUDE {
-            let layers = app
-                .session
-                .active()
-                .and_then(|doc| doc.selection.objects.first().and_then(|id| doc.doc.node(*id)))
-                .map_or(0, vectorcraft_effects::layer_count);
             extrude_controls(ui, d, unit, layers);
         } else {
             heading(ui, tl!("Object"));
             number(ui, d, "depth", tl!("Depth"), (0.0, 2000.0), "", 1, Some(unit));
+            layer_depth_controls(ui, d, unit, layers);
             number(ui, d, "twist", tl!("Twist"), (0.0, 360.0), "°", 1, None);
             number(ui, d, "taper", tl!("Taper"), (1.0, 100.0), "%", 1, None);
             choice(ui, d, "cap", c3("Cap"), &[(json!(true), c3("Solid")), (json!(false), c3("Hollow"))]);

@@ -66,7 +66,10 @@ each in its own top fill (else top stroke), up to 16. Where a layer lies inside 
 that layer's surface and meets it at its own outline, so nested shapes (a star on a disc on a square) stack as
 cushions on each other and turn together about the centre of the whole group. Depth, back and sides are the bottom
 layer's; graphics go on the top one; the options apply to every layer. The heights add up, so a group usually wants
-a lower Volume (20–25 %) than a single shape for a badge-like look; at a steep angle a tall stack visibly leans.
+a lower Volume (20–25 %) than a single shape for a badge-like look; at a steep angle a tall stack visibly leans. **Layer
+Depths** (as for Extrude & Bevel, `layerDepths`) gives each layer a depth: the bottom layer's is its flat side
+between front and back; a layer above stands that far up from the surface below on walls of its own outline,
+then puffs, like a cushion on a short block. Untouched, every layer follows Depth (0 by default: no walls).
 
 The surface is cut into a grid of 48 facets across the larger side (24 in a draft preview), halved or quartered where it rises steeply near the outline, each cut to the shape. A cell the outline leaves and comes back into is cut into separate parts, and neighbouring cells meet at exactly the same points along their shared sides, so the surface is watertight: no cracks or slivers along its rim. (Outlines whose subpaths cross each other are cut subpath by subpath and joined by the nonzero fill rule.) With smooth shading, each point's normal comes from the surface's height field itself (solved on a grid twice as fine as the facets, and near the outline from the exact distance to it), so mirror finishes reflect cleanly across the steep rim.
 

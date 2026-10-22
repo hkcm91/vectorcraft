@@ -1547,26 +1547,39 @@ pub fn inflate_mapped(path: &PathData, bounds: Rect, options: Inflate, view: Vie
     let o = options.sanitized();
     let Some(puff) = Puff::solve(path, bounds, o)? else { return Ok(Shaded::default()) };
     let extent = o.depth + 2.0 * puff.height;
-    build_inflate(path, bounds, o, view, art, puff, &Stack { below: &[], half: o.depth / 2.0, extent })
+    build_inflate(path, bounds, o, view, art, puff, &Stack { below: &[], half: o.depth / 2.0, extent, raise: 0.0 })
 }
 
 /// Inflate on nested layers (bottom first), each puffed on the surface of those below it: where a
 /// layer lies inside another it rises from that one's surface, meeting it at its own outline, so
-/// a star on a disc on a square is three cushions sitting on each other. The bottom layer has the
-/// depth, back and sides; the others only their puffed fronts. They turn together about the
-/// centre of `bounds` (all the layers'), and `art` goes on the top layer. One [`Shaded`] per
-/// layer, bottom first, to be drawn in that order.
-pub fn inflate_stack(layers: &[PathData], bounds: Rect, options: Inflate, view: View, art: &[Vec<Vec<Point>>]) -> Result<Vec<Shaded>, String> {
+/// a star on a disc on a square is three cushions sitting on each other. Layer k's depth is
+/// `depths[k]` (0..2,000 pt; without an entry, the options' depth): the bottom layer's is its flat
+/// side between front and back, as on one shape; a layer above stands its depth up from the
+/// surface below on walls of its own outline, then puffs. They turn together about the centre of
+/// `bounds` (all the layers'), and `art` goes on the top layer. One [`Shaded`] per layer, bottom
+/// first, to be drawn in that order.
+pub fn inflate_stack(
+    layers: &[PathData],
+    bounds: Rect,
+    options: Inflate,
+    view: View,
+    art: &[Vec<Vec<Point>>],
+    depths: &[f64],
+) -> Result<Vec<Shaded>, String> {
     check_bounds(bounds)?;
     if layers.len() > MAX_LAYERS {
         return Err(format!("Inflate takes at most {MAX_LAYERS} layers"));
     }
     let o = options.sanitized();
+    let depth = |k: usize| depths.get(k).copied().filter(|d| d.is_finite()).map_or(o.depth, |d| d.clamp(0.0, 2000.0));
     let mut puffs = Vec::with_capacity(layers.len());
-    for path in layers {
-        puffs.push(Puff::solve(path, bounds, o)?);
+    for (k, path) in layers.iter().enumerate() {
+        // The bottom layer's depth is its own flat side; those above stand on theirs.
+        let raise = if k == 0 { 0.0 } else { depth(k) };
+        puffs.push(Puff::solve(path, bounds, o)?.map(|p| Puff { raise, ..p }));
     }
-    let extent = o.depth + 2.0 * puffs.iter().flatten().map(|p| p.height).sum::<f64>();
+    let bottom = Inflate { depth: depth(0), ..o };
+    let extent = bottom.depth + puffs.iter().flatten().map(|p| 2.0 * p.height + p.raise).sum::<f64>();
     let upper = Inflate { depth: 0.0, both_sides: false, cap: false, twist: 0.0, taper: 1.0, ..o };
     let mut below: Vec<Puff> = vec![];
     let mut out = Vec::with_capacity(layers.len());
@@ -1576,9 +1589,9 @@ pub fn inflate_stack(layers: &[PathData], bounds: Rect, options: Inflate, view: 
             out.push(Shaded::default());
             continue;
         };
-        let layer = if below.is_empty() { o } else { upper };
+        let layer = if k == 0 { bottom } else { upper };
         let art = if k == top { art } else { &[] };
-        let stack = Stack { below: &below, half: o.depth / 2.0, extent };
+        let stack = Stack { below: &below, half: bottom.depth / 2.0, extent, raise: puff.raise };
         out.push(build_inflate(path, bounds, layer, view, art, puff.clone(), &stack)?);
         below.push(puff);
     }
@@ -1589,11 +1602,13 @@ pub fn inflate_stack(layers: &[PathData], bounds: Rect, options: Inflate, view: 
 pub const MAX_LAYERS: usize = 16;
 
 /// How a layer of [`inflate_stack`] sits: on the puffs `below` it, its front `half` the bottom
-/// layer's depth ahead of the middle, in a view framed for the stack's whole `extent`.
+/// layer's depth ahead of the middle, `raise` above the surface below on walls of its own, in a
+/// view framed for the stack's whole `extent`.
 struct Stack<'a> {
     below: &'a [Puff],
     half: f64,
     extent: f64,
+    raise: f64,
 }
 
 /// One shape's puff: the membrane over it and how high it rises.
@@ -1605,6 +1620,8 @@ struct Puff {
     height: f64,
     /// [`Inflate::pillow`] as a share (0..1).
     pillow: f64,
+    /// In a stack, how far the layer stands up from the surface below before it puffs.
+    raise: f64,
 }
 
 impl Puff {
@@ -1631,7 +1648,7 @@ impl Puff {
         let edges = Edges::new(&rings);
         // A circle of radius r puffs into a half sphere of radius r at 50 % (its membrane peaks at r²/4).
         let height = 2.0 * m.peak.sqrt() * o.volume / 50.0;
-        Ok(Some(Self { rings, m, edges, height, pillow: o.pillow / 100.0 }))
+        Ok(Some(Self { rings, m, edges, height, pillow: o.pillow / 100.0, raise: 0.0 }))
     }
 
     /// The height's profile across the puff, from φ's share `s` (0 at the outline, 1 at the peak):
@@ -1649,6 +1666,17 @@ impl Puff {
         }
         let d = if self.edges.near(p, Membrane::RIM * self.m.step) { self.edges.distance(p) } else { f64::INFINITY };
         self.height * self.profile(self.m.at_rim(p, d).max(0.0) / self.m.peak)
+    }
+
+    /// Is `p` inside the shape? Near the outline exactly; farther off, by φ's sign.
+    fn inside(&self, p: Point) -> bool {
+        if self.edges.near(p, Membrane::RIM * self.m.step) { filled(&self.rings, p) } else { self.m.at(p) > 0.0 }
+    }
+
+    /// What a layer above stands on, at `p`: this puff and its raise inside the outline.
+    fn stand(&self, p: Point) -> f64 {
+        let raise = if self.raise > 0.0 && self.inside(p) { self.raise } else { 0.0 };
+        raise + self.lift(p)
     }
 
     /// The surface's normal at `p` from φ's value and slope there, scaled to stay finite where a
@@ -1688,18 +1716,18 @@ fn build_inflate(
     let Puff { rings, m, edges, .. } = &puff;
     let outline = PathData::new(rings.iter().map(|r| vectorcraft_geom::SubPath::polyline(r, true)).collect());
     // The layers below: what this one stands on, and that surface's slope.
-    let base = |p: Point| stack.below.iter().map(|b| b.lift(p)).sum::<f64>();
+    let under = |p: Point| stack.below.iter().map(|b| b.stand(p)).sum::<f64>();
     let base_slope = |p: Point| {
         if stack.below.is_empty() {
             return (0.0, 0.0);
         }
         let e = 0.02 * cell;
-        let dx = (base(Point::new(p.x + e, p.y)) - base(Point::new(p.x - e, p.y))) / (2.0 * e);
-        let dy = (base(Point::new(p.x, p.y + e)) - base(Point::new(p.x, p.y - e))) / (2.0 * e);
+        let dx = (under(Point::new(p.x + e, p.y)) - under(Point::new(p.x - e, p.y))) / (2.0 * e);
+        let dy = (under(Point::new(p.x, p.y + e)) - under(Point::new(p.x, p.y - e))) / (2.0 * e);
         (dx, dy)
     };
     let own = |p: Point| puff.lift(p);
-    let lift = |p: Point| own(p) + base(p);
+    let lift = |p: Point| own(p) + under(p) + stack.raise;
     // The front's exact outward normal at `p` (art space, before the view turns it), from φ and
     // its slope ([`Puff::normal`]); a stacked layer adds the slope of the surface it stands on.
     // φ is continued past the outline (negative) for the slope there.
@@ -1901,6 +1929,14 @@ fn build_inflate(
     if !o.both_sides && o.cap {
         let back: Vec<Vec<V3>> = rings.iter().map(|r| r.iter().map(|p| camera.place(back_turn.apply(*p), -half)).collect()).collect();
         b.face(back, camera.rotate(V3(0.0, 0.0, -1.0)))?;
+    }
+    if stack.raise > 0.0 {
+        // A stacked layer's walls, from the surface below up to where its puff starts.
+        for ring in rings {
+            let low: Vec<V3> = ring.iter().map(|p| camera.place(*p, half + under(*p))).collect();
+            let high: Vec<V3> = ring.iter().map(|p| camera.place(*p, half + under(*p) + stack.raise)).collect();
+            b.band(&high, &low, |i| outward(ring, i, 0.0))?;
+        }
     }
     if o.depth > 0.0 {
         // The sides, cut into slices that follow a twist or taper.

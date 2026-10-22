@@ -166,8 +166,8 @@ pub fn validate_solid(n: &Node, id: &str, p: &Value) -> Result<(), String> {
     facets(id, &path, b, p, &[]).map(|_| ())
 }
 
-/// Extrude & Bevel's `layerDepths` on a group: each layer's depth, bottom first (a layer without
-/// one takes `depth`).
+/// Extrude & Bevel's and Inflate's `layerDepths` on a group: each layer's depth, bottom first (a
+/// layer without one takes `depth`).
 pub fn layer_depths(p: &Value) -> Vec<f64> {
     p.get("layerDepths").and_then(Value::as_array).map(|a| a.iter().map(|v| v.as_f64().unwrap_or(f64::NAN)).collect()).unwrap_or_default()
 }
@@ -205,7 +205,7 @@ fn stack(id: &str, layers: &[PathData], bounds: Rect, p: &Value, art: &[Vec<Vec<
     let view = view_options(p);
     match id {
         EXTRUDE => vectorcraft_three_d::extrude_stack(layers, bounds, extrude_options(p), view, art, &layer_depths(p)),
-        INFLATE => vectorcraft_three_d::inflate_stack(layers, bounds, inflate_options(p), view, art),
+        INFLATE => vectorcraft_three_d::inflate_stack(layers, bounds, inflate_options(p), view, art, &layer_depths(p)),
         _ => {
             if layers.len() > vectorcraft_three_d::MAX_LAYERS {
                 return Err(format!("Rotate takes at most {} layers", vectorcraft_three_d::MAX_LAYERS));
