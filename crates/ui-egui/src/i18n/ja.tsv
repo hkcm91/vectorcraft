@@ -4290,6 +4290,10 @@ lighting	Light	ライト
 	Twist	ねじれ
 	Volume	ボリューム
 	Pillow	クッション
+	Layer Depths	レイヤーの奥行き
+	Layer {n} (bottom)	レイヤー {n}（最下）
+	Layer {n}	レイヤー {n}
+	Use Depth for All	すべてに奥行きを適用
 3d	Cap	キャップ
 3d	Solid	ソリッド
 3d	Hollow	中空

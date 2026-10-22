@@ -122,6 +122,12 @@ fn layers(n: &Node) -> Option<Vec<(PathData, &Node)>> {
     (!layers.is_empty()).then_some(layers)
 }
 
+/// How many layers a 3D effect on `n` would stack: its group's paths and compound paths (0 for
+/// anything else).
+pub fn layer_count(n: &Node) -> usize {
+    layers(n).map_or(0, |l| l.len())
+}
+
 /// The bounds of all `layers`.
 fn layer_bounds(layers: &[(PathData, &Node)]) -> Option<Rect> {
     layers.iter().filter_map(|(p, _)| p.bounds()).reduce(|a, b| a.union(b))
@@ -144,6 +150,7 @@ pub fn validate_solid(n: &Node, id: &str, p: &Value) -> Result<(), String> {
         && let Some(layers) = layers(n)
     {
         validate_bevel(p)?;
+        validate_layer_depths(p)?;
         crate::lighting::validate(p)?;
         crate::graphics::validate(p)?;
         let b = layer_bounds(&layers).ok_or_else(|| format!("{label} requires shapes with at least two anchors"))?;
@@ -157,6 +164,24 @@ pub fn validate_solid(n: &Node, id: &str, p: &Value) -> Result<(), String> {
     crate::lighting::validate(p)?;
     crate::graphics::validate(p)?;
     facets(id, &path, b, p, &[]).map(|_| ())
+}
+
+/// Extrude & Bevel's `layerDepths` on a group: each layer's depth, bottom first (a layer without
+/// one takes `depth`).
+pub fn layer_depths(p: &Value) -> Vec<f64> {
+    p.get("layerDepths").and_then(Value::as_array).map(|a| a.iter().map(|v| v.as_f64().unwrap_or(f64::NAN)).collect()).unwrap_or_default()
+}
+
+fn validate_layer_depths(p: &Value) -> Result<(), String> {
+    let Some(v) = p.get("layerDepths") else { return Ok(()) };
+    let list = v.as_array().ok_or("layerDepths must be a list of depths in points")?;
+    if list.len() > vectorcraft_three_d::MAX_LAYERS {
+        return Err(format!("layerDepths takes at most {} depths", vectorcraft_three_d::MAX_LAYERS));
+    }
+    match list.iter().all(|d| d.as_f64().is_some_and(|d| (0.0..=2000.0).contains(&d))) {
+        true => Ok(()),
+        false => Err("each of layerDepths must be a depth from 0 to 2000 pt".into()),
+    }
 }
 
 fn validate_bevel(p: &Value) -> Result<(), String> {
@@ -179,7 +204,7 @@ fn takes_groups(id: &str) -> bool {
 fn stack(id: &str, layers: &[PathData], bounds: Rect, p: &Value, art: &[Vec<Vec<Point>>]) -> Result<Vec<Shaded>, String> {
     let view = view_options(p);
     match id {
-        EXTRUDE => vectorcraft_three_d::extrude_stack(layers, bounds, extrude_options(p), view, art),
+        EXTRUDE => vectorcraft_three_d::extrude_stack(layers, bounds, extrude_options(p), view, art, &layer_depths(p)),
         INFLATE => vectorcraft_three_d::inflate_stack(layers, bounds, inflate_options(p), view, art),
         _ => {
             if layers.len() > vectorcraft_three_d::MAX_LAYERS {

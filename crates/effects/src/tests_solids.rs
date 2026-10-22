@@ -241,6 +241,12 @@ fn the_solids_on_a_group_take_each_layer_in_its_own_paint() {
     let extrude = json!({"rotationX": 0, "rotationY": 0, "rotationZ": 0, "smoothShading": false, "depth": 20});
     validate_solid(&g, EXTRUDE, &extrude).unwrap();
     assert!(validate_solid(&g, EXTRUDE, &json!({"bevel": "nope"})).is_err());
+    validate_solid(&g, EXTRUDE, &json!({"layerDepths": [5, 40]})).unwrap();
+    for bad in [json!(3), json!([-1]), json!(["deep"]), json!([2001]), json!(vec![1; 17])] {
+        assert!(validate_solid(&g, EXTRUDE, &json!({"layerDepths": bad})).is_err(), "{bad}");
+    }
+    assert_eq!(layer_depths(&json!({"layerDepths": [5, 40]})), vec![5.0, 40.0]);
+    assert_eq!(layer_count(&g), 2);
     g.appearance = Appearance { effects: vec![fx(EXTRUDE, extrude)], ..Default::default() }.into();
     let art = solid_art(&g).unwrap();
     let surfaces = art.children().unwrap();

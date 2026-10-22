@@ -838,27 +838,42 @@ pub fn extrude_mapped(path: &PathData, bounds: Rect, options: Extrude, view: Vie
     build_extrude(path, bounds, o, view, art, o.depth / 2.0, o.depth)
 }
 
-/// Extrude & Bevel on nested layers (bottom first), each extruded by the full depth and standing
-/// on the front of the one below it, like cut-outs stacked on each other: the stack is `depth`
-/// times the layers deep, centred on the art's plane, and turns as one about the centre of
-/// `bounds` (all the layers'). Each layer has its own bevel, twist and taper; `art` goes on the
-/// top layer's front. One [`Shaded`] per layer, bottom first, to be drawn in that order.
-pub fn extrude_stack(layers: &[PathData], bounds: Rect, options: Extrude, view: View, art: &[Vec<Vec<Point>>]) -> Result<Vec<Shaded>, String> {
+/// Extrude & Bevel on nested layers (bottom first), each extruded and standing on the front of the
+/// one below it, like cut-outs stacked on each other. Layer k is `depths[k]` deep (0..2,000 pt;
+/// without an entry, the options' depth): the stack is their sum deep, centred on the art's plane,
+/// and turns as one about the centre of `bounds` (all the layers'). Each layer has its own bevel
+/// (no deeper than the layer), twist and taper; `art` goes on the top layer's front. One
+/// [`Shaded`] per layer, bottom first, to be drawn in that order.
+pub fn extrude_stack(
+    layers: &[PathData],
+    bounds: Rect,
+    options: Extrude,
+    view: View,
+    art: &[Vec<Vec<Point>>],
+    depths: &[f64],
+) -> Result<Vec<Shaded>, String> {
     check_bounds(bounds)?;
     if layers.len() > MAX_LAYERS {
         return Err(format!("Extrude & Bevel takes at most {MAX_LAYERS} layers"));
     }
     let o = options.sanitized();
+    let depth = |k: usize| depths.get(k).copied().filter(|d| d.is_finite()).map_or(o.depth, |d| d.clamp(0.0, 2000.0));
     let top = layers.len().saturating_sub(1);
-    if o.depth <= 0.0 {
-        return layers.iter().enumerate().map(|(k, p)| plane_mapped(p, bounds, view, if k == top { art } else { &[] })).collect();
+    let art_on = |k: usize| if k == top { art } else { &[] };
+    if (0..layers.len()).all(|k| depth(k) <= 0.0) {
+        return layers.iter().enumerate().map(|(k, p)| plane_mapped(p, bounds, view, art_on(k))).collect();
     }
-    let extent = o.depth * layers.len() as f64;
-    layers
-        .iter()
-        .enumerate()
-        .map(|(k, p)| build_extrude(p, bounds, o, view, if k == top { art } else { &[] }, -extent / 2.0 + o.depth * (k + 1) as f64, extent))
-        .collect()
+    // A layer of no depth among deeper ones is a thin sheet at its place in the stack.
+    let depth = |k: usize| depth(k).max(0.01);
+    let extent: f64 = (0..layers.len()).map(depth).sum();
+    let mut front = -extent / 2.0;
+    let mut out = Vec::with_capacity(layers.len());
+    for (k, path) in layers.iter().enumerate() {
+        let d = depth(k);
+        front += d;
+        out.push(build_extrude(path, bounds, Extrude { depth: d, ..options }.sanitized(), view, art_on(k), front, extent)?);
+    }
+    Ok(out)
 }
 
 /// Extrude & Bevel's solid for `path`, its front `front` points ahead of the art's plane, in a

@@ -4727,6 +4727,10 @@ mark-style	Japanese	Japonské
 	Twist	Zkroucení
 	Volume	Objem
 	Pillow	Polštář
+	Layer Depths	Hloubka vrstev
+	Layer {n} (bottom)	Vrstva {n} (spodní)
+	Layer {n}	Vrstva {n}
+	Use Depth for All	Hloubka pro všechny
 3d	Cap	Uzávěr
 3d	Solid	Plné
 3d	Hollow	Duté

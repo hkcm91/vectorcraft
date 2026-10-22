@@ -3541,6 +3541,10 @@
 	Visibility	Hiển thị
 	Volume	Thể tích
 	Pillow	Gối
+	Layer Depths	Độ sâu lớp
+	Layer {n} (bottom)	Lớp {n} (dưới cùng)
+	Layer {n}	Lớp {n}
+	Use Depth for All	Dùng độ sâu cho tất cả
 	W:	W:
 	Warnings	Cảnh báo
 	Warp	Biến dạng

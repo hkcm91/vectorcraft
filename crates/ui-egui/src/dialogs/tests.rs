@@ -278,6 +278,33 @@ fn materials_adds_a_flat_rotate_or_edits_the_3d_effect_on_its_material_tab() {
 }
 
 #[test]
+fn extrude_on_a_group_offers_a_depth_per_layer() {
+    let mut app = app();
+    for (x, s) in [(10, 120), (30, 80), (50, 40)] {
+        app.run("shape.rectangle", json!({"x": x, "y": x, "width": s, "height": s})).unwrap();
+    }
+    app.run("select.all", json!({})).unwrap();
+    let group = app.run("object.group", json!({})).unwrap();
+    let id = group["id"].as_u64().or_else(|| group["ids"][0].as_u64());
+    app.run("effect.dialog", json!({"effect": "threeD.extrude", "item": null})).unwrap();
+    app.ui.dialog.as_mut().unwrap().fields.insert("__tab".into(), json!("object"));
+    frame(&mut app, Default::default());
+    let d = app.ui.dialog.as_ref().unwrap();
+    assert!((0..3).all(|k| d.fields.contains_key(&format!("__layerDepth{k}"))), "a field per layer");
+    assert!(d.fields.get("layerDepths").is_none_or(|v| v == &json!([])), "untouched, every layer follows Depth");
+    app.ui.dialog.as_mut().unwrap().fields.insert("layerDepths".into(), json!([10, 30, 60]));
+    frame(&mut app, Default::default());
+    confirm(&mut app).unwrap();
+    let doc = &app.session.doc().unwrap().doc;
+    let g = match id {
+        Some(id) => doc.node(vectorcraft_doc::NodeId(id)).unwrap().clone(),
+        None => doc.node(*app.session.doc().unwrap().selection.objects.first().unwrap()).unwrap().clone(),
+    };
+    assert_eq!(g.appearance.effects[0].params["layerDepths"], json!([10, 30, 60]));
+    assert!(vectorcraft_effects::solid_art(&g).is_some());
+}
+
+#[test]
 fn revolve_dialog_preview_cancel_confirm_and_undo() {
     let mut app = app();
     app.run("path.create", json!({"d":"M150 40 L180 60 L180 140 L150 160"})).unwrap();

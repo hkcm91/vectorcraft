@@ -38,9 +38,11 @@ Holes stay holes, with walls of their own. Bevels move each corner along its bis
 times the width), so a bevel wider than a narrow part of the shape folds over itself.
 
 **On a group** (our own extension), Extrude & Bevel extrudes every path and compound path in it as a layer,
-bottom first, each in its own top fill (else top stroke), up to 16. Each layer is the full Depth deep and stands
-on the front of the one below it, like cut-outs stacked on each other: the stack is Depth times the layers deep,
-centred on the art's plane, and turns as one about the centre of the whole group. Every layer takes the same
+bottom first, each in its own top fill (else top stroke), up to 16. Each layer stands on the front of the one below
+it, like cut-outs stacked on each other. **Layer Depths** (under Depth, for a group of two or more) sets each
+layer's own depth, bottom first; until one is changed every layer follows Depth, and **Use Depth for All** goes back
+to that (`layerDepths` in commands: a list, a layer without an entry taking `depth`). The stack is the layers'
+depths added up, centred on the art's plane, and turns as one about the centre of the whole group. Every layer takes the same
 bevel, twist and taper; graphics go on the top layer's front. Layers are drawn bottom first, which is right from
 the front and sides; seen from behind, the bottom layer is drawn under the others.
 

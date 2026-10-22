@@ -4276,6 +4276,10 @@ lighting	Light	Світло
 	Twist	Закручування
 	Volume	Об'єм
 	Pillow	Подушка
+	Layer Depths	Глибина шарів
+	Layer {n} (bottom)	Шар {n} (нижній)
+	Layer {n}	Шар {n}
+	Use Depth for All	Глибина для всіх
 3d	Cap	Торці
 3d	Solid	Суцільний
 3d	Hollow	Порожнистий

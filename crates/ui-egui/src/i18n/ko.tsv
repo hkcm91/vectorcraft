@@ -4260,6 +4260,10 @@ lighting	Light	광원
 	Twist	비틀기
 	Volume	볼륨
 	Pillow	쿠션
+	Layer Depths	레이어 깊이
+	Layer {n} (bottom)	레이어 {n}(맨 아래)
+	Layer {n}	레이어 {n}
+	Use Depth for All	모두 깊이 사용
 3d	Cap	캡
 3d	Solid	솔리드
 3d	Hollow	속이 빈

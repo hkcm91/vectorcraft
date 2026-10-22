@@ -4668,6 +4668,10 @@ mark-style	Japanese	Japonesas
 	Twist	Torsión
 	Volume	Volumen
 	Pillow	Almohada
+	Layer Depths	Profundidad de capas
+	Layer {n} (bottom)	Capa {n} (abajo)
+	Layer {n}	Capa {n}
+	Use Depth for All	Usar profundidad para todas
 3d	Cap	Tapa
 3d	Solid	Sólido
 3d	Hollow	Hueco

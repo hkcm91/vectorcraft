@@ -4694,6 +4694,10 @@ imageTrace	Outline	Körvonal
 	Twist	Csavarás
 	Volume	Térfogat
 	Pillow	Párna
+	Layer Depths	Rétegmélységek
+	Layer {n} (bottom)	{n}. réteg (alsó)
+	Layer {n}	{n}. réteg
+	Use Depth for All	Mélység mindegyikre
 3d	Cap	Zárólap
 3d	Solid	Tömör
 3d	Hollow	Üreges

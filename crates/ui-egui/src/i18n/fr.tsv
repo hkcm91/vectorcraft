@@ -4304,6 +4304,10 @@ lighting	Light	Lumière
 	Twist	Torsion
 	Volume	Volume
 	Pillow	Coussin
+	Layer Depths	Profondeur des calques
+	Layer {n} (bottom)	Calque {n} (dessous)
+	Layer {n}	Calque {n}
+	Use Depth for All	Même profondeur partout
 3d	Cap	Fermeture
 3d	Solid	Plein
 3d	Hollow	Creux

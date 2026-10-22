@@ -4251,6 +4251,10 @@ theme	Appearance	Erscheinungsbild
 	Twist	Verdrehung
 	Volume	Volumen
 	Pillow	Kissen
+	Layer Depths	Ebenentiefen
+	Layer {n} (bottom)	Ebene {n} (unten)
+	Layer {n}	Ebene {n}
+	Use Depth for All	Tiefe für alle
 3d	Cap	Deckflächen
 3d	Solid	Massiv
 3d	Hollow	Hohl

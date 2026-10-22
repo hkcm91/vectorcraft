@@ -4296,6 +4296,10 @@ lighting	Light	Luce
 	Twist	Torsione
 	Volume	Volume
 	Pillow	Cuscino
+	Layer Depths	Profondità dei livelli
+	Layer {n} (bottom)	Livello {n} (in basso)
+	Layer {n}	Livello {n}
+	Use Depth for All	Usa la profondità per tutti
 3d	Cap	Chiusura
 3d	Solid	Pieno
 3d	Hollow	Cavo

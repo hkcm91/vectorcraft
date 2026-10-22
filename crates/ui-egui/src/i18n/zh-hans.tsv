@@ -3884,6 +3884,10 @@ lighting	Light	光源
 	Twist	扭转
 	Volume	体积
 	Pillow	软垫
+	Layer Depths	图层深度
+	Layer {n} (bottom)	图层 {n}（底层）
+	Layer {n}	图层 {n}
+	Use Depth for All	全部使用深度
 3d	Cap	封口
 3d	Solid	实心
 3d	Hollow	空心

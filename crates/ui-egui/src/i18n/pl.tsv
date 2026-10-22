@@ -4560,6 +4560,10 @@ mark-style	Japanese	Japońskie
 	Twist	Skręcenie
 	Volume	Objętość
 	Pillow	Poduszka
+	Layer Depths	Głębokość warstw
+	Layer {n} (bottom)	Warstwa {n} (dolna)
+	Layer {n}	Warstwa {n}
+	Use Depth for All	Głębokość dla wszystkich
 3d	Cap	Zakończenie
 3d	Solid	Pełne
 3d	Hollow	Puste

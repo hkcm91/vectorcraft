@@ -171,7 +171,12 @@ fn solid_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog, id: &
     } else if object && d.str("__tab") != "rotation" {
         let unit = app.session.general_unit();
         if id == EXTRUDE {
-            extrude_controls(ui, d, unit);
+            let layers = app
+                .session
+                .active()
+                .and_then(|doc| doc.selection.objects.first().and_then(|id| doc.doc.node(*id)))
+                .map_or(0, vectorcraft_effects::layer_count);
+            extrude_controls(ui, d, unit, layers);
         } else {
             heading(ui, tl!("Object"));
             number(ui, d, "depth", tl!("Depth"), (0.0, 2000.0), "", 1, Some(unit));
@@ -188,9 +193,10 @@ fn solid_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog, id: &
 }
 
 /// Extrude & Bevel's depth, twist, taper, cap and bevel.
-fn extrude_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
+fn extrude_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit, layers: usize) {
     heading(ui, tl!("Object"));
     number(ui, d, "depth", tl!("Depth"), (0.0, 2000.0), "", 1, Some(unit));
+    layer_depth_controls(ui, d, unit, layers);
     number(ui, d, "twist", tl!("Twist"), (0.0, 360.0), "°", 1, None);
     number(ui, d, "taper", tl!("Taper"), (1.0, 100.0), "%", 1, None);
     choice(ui, d, "cap", c3("Cap"), &[(json!(true), c3("Solid")), (json!(false), c3("Hollow"))]);
@@ -213,6 +219,36 @@ fn extrude_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
         toggle(ui, d, "bevelInside", tl!("Bevel Inside"), false);
         toggle(ui, d, "bevelBothSides", tl!("Bevel both sides"), false);
     });
+}
+
+/// On a group of `layers` shapes, each one's depth (`layerDepths`, bottom first). Until one is
+/// changed every layer follows Depth; Use Depth for All goes back to that.
+fn layer_depth_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit, layers: usize) {
+    if layers < 2 {
+        return;
+    }
+    let depth = d.f64("depth", 50.0);
+    let own = vectorcraft_effects::layer_depths(&Value::Object(d.fields.clone()));
+    ui.add_space(6.0);
+    heading(ui, tl!("Layer Depths"));
+    let mut depths = Vec::with_capacity(layers);
+    let mut changed = false;
+    for k in 0..layers {
+        let key = format!("__layerDepth{k}");
+        let was = own.get(k).copied().filter(|v| v.is_finite()).unwrap_or(depth);
+        d.fields.insert(key.clone(), json!(was));
+        let name = crate::i18n::fmt(if k == 0 { tl!("Layer {n} (bottom)") } else { tl!("Layer {n}") }, &[("n", &(k + 1).to_string())]);
+        number(ui, d, &key, &name, (0.0, 2000.0), "", 1, Some(unit));
+        let now = d.f64(&key, was);
+        changed |= (now - was).abs() > 1e-9;
+        depths.push(now);
+    }
+    if changed {
+        d.fields.insert("layerDepths".into(), json!(depths));
+    }
+    if !own.is_empty() && widgets::flat_button(ui, tl!("Use Depth for All"), 130.0).clicked() {
+        d.fields.insert("layerDepths".into(), json!([]));
+    }
 }
 
 /// Rotation presets, rotation and perspective for Extrude & Bevel, Inflate and Rotate.
