@@ -36,6 +36,11 @@ pub fn open_tool_dialog(app: &mut VectorcraftApp, kind: &str, p: Value) {
             }
             return;
         }
+        // An Arch tool click: the Arch Tool Options, with the tool's values; OK draws an arch there.
+        "arch" => {
+            super::arch_options::open(app, Some(vectorcraft_geom::Point::new(x, y)));
+            return;
+        }
         // A Flare tool click: the Flare Tool Options, with the tool's values; OK draws a flare there.
         "flare" => {
             super::flare_options::open(app, Some(vectorcraft_geom::Point::new(x, y)));

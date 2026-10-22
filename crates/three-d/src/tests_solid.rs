@@ -192,6 +192,107 @@ fn inflate_covers_the_shape_and_puffs_by_the_volume() {
     assert!(thick(Inflate { volume: 0.0, depth: 10.0, ..Inflate::default() }) <= 10.0 + 1e-6);
 }
 
+fn disc(cx: f64, cy: f64, r: f64) -> BezPath {
+    let mut c = BezPath::new();
+    c.extend(vectorcraft_geom::kurbo::Shape::path_elements(&vectorcraft_geom::kurbo::Circle::new((cx, cy), r), 0.01));
+    c
+}
+
+#[test]
+fn a_pillow_rises_from_a_seam_at_an_angle_and_is_plump_and_level_on_top() {
+    let (p, b) = shape(&disc(100.0, 100.0, 50.0));
+    let puff = |pillow: f64| Puff::solve(&p, b, Inflate { pillow, ..Inflate::default() }).unwrap().unwrap();
+    let (dome, pillow) = (puff(0.0), puff(100.0));
+    let at = |f: &Puff, rho: f64| f.lift(Point::new(100.0 + 50.0 * rho, 100.0));
+    // The same height at the middle, the half sphere's radius.
+    assert!(close(at(&dome, 0.0), 50.0, 1.0) && close(at(&pillow, 0.0), 50.0, 1.0), "{} {}", at(&dome, 0.0), at(&pillow, 0.0));
+    // Plumper across the top, lower towards the seam.
+    assert!(at(&pillow, 0.4) > at(&dome, 0.4) + 1.0, "{} {}", at(&pillow, 0.4), at(&dome, 0.4));
+    assert!(at(&pillow, 0.97) < at(&dome, 0.97) - 3.0, "{} {}", at(&pillow, 0.97), at(&dome, 0.97));
+    // At the seam a dome stands straight up (its height grows as the root of the way in), a
+    // pillow leans out at an angle (its height grows with the way in): twice as far in, a dome is
+    // √2 as high, a pillow twice.
+    let growth = |f: &Puff| at(f, 1.0 - 1.0 / 50.0) / at(f, 1.0 - 0.5 / 50.0);
+    assert!(close(growth(&dome), 2f64.sqrt(), 0.1), "{}", growth(&dome));
+    assert!(close(growth(&pillow), 2.0, 0.1), "{}", growth(&pillow));
+    // A square pillow's corners are pinched: lower there than along its sides at the same inset.
+    let (sq, r) = shape(&square(0.0, 0.0, 100.0));
+    let s = Puff::solve(&sq, r, Inflate { pillow: 100.0, ..Inflate::default() }).unwrap().unwrap();
+    assert!(s.lift(Point::new(12.0, 12.0)) < 0.8 * s.lift(Point::new(50.0, 12.0)));
+}
+
+#[test]
+fn stacked_layers_rise_from_the_surface_below_them() {
+    let (base, _) = shape(&disc(100.0, 100.0, 50.0));
+    let (upper, _) = shape(&disc(100.0, 100.0, 20.0));
+    let b = Rect::new(50.0, 50.0, 150.0, 150.0);
+    let side = View { rotation_y: 90.0, ..front() };
+    let o = Inflate::default();
+    let alone = inflate(&base, b, o, side).unwrap();
+    let stack = inflate_stack(&[base.clone(), upper.clone()], b, o, side, &[], &[]).unwrap();
+    assert_eq!(stack.len(), 2);
+    // The bottom layer is drawn as on its own (only its depth order, framed for the whole stack,
+    // differs).
+    let outlines = |f: &[Facet]| f.iter().map(|f| f.contours.clone()).collect::<Vec<_>>();
+    assert_eq!(outlines(&stack[0].facets), outlines(&alone));
+    // From the side the top layer stands on the bottom's peak: their heights add.
+    let top = extent(&stack[1].facets);
+    let small = extent(&inflate(&upper, b, o, side).unwrap()).width();
+    // It rises from the bottom's surface under its rim (0.4 of the way out on a half sphere of
+    // 50) to the bottom's peak plus its own height.
+    let rim = 50.0 * (1.0 - 0.4f64 * 0.4).sqrt();
+    assert!(close(top.width(), 50.0 + small - rim, 2.0), "{} vs {}", top.width(), 50.0 + small - rim);
+    let (lo, hi) = (extent(&alone).x0.min(extent(&alone).x1), top.x0.max(top.x1));
+    assert!(close(hi - lo, 50.0 + small, 3.0), "{} vs {}", hi - lo, 50.0 + small);
+    // Straight on, the top layer covers its own disc only, over the bottom.
+    let f = inflate_stack(&[base.clone(), upper.clone()], b, o, front(), &[], &[]).unwrap();
+    assert!(close(area(&f[1].facets), std::f64::consts::PI * 400.0, 20.0), "{}", area(&f[1].facets));
+    assert!(inflate_stack(&vec![PathData::default(); MAX_LAYERS + 1], b, o, front(), &[], &[]).is_err());
+    // A depth per layer: the bottom's is its flat side, so the whole stack is that much thicker;
+    // the top one stands its depth up from the surface below on walls before it puffs.
+    let thick = |f: &[Shaded]| {
+        let (a, z) = (extent(&f[0].facets), extent(&f[1].facets));
+        a.x1.max(z.x1) - a.x0.min(z.x0)
+    };
+    let plain = thick(&stack);
+    let raised = inflate_stack(&[base.clone(), upper.clone()], b, o, side, &[], &[0.0, 15.0]).unwrap();
+    assert!(close(thick(&raised), plain + 15.0, 1.0), "{} vs {plain}", thick(&raised));
+    assert!(close(extent(&raised[1].facets).width(), extent(&stack[1].facets).width() + 15.0, 1.0));
+    let deep = inflate_stack(&[base, upper], b, o, side, &[], &[20.0]).unwrap();
+    assert!(close(thick(&deep), plain + 20.0, 1.0), "{} vs {plain}", thick(&deep));
+}
+
+#[test]
+fn extruded_layers_stand_on_each_other() {
+    let (base, b) = shape(&square(0.0, 0.0, 100.0));
+    let (upper, _) = shape(&square(25.0, 25.0, 50.0));
+    let o = Extrude { depth: 20.0, ..Extrude::default() };
+    let side = View { rotation_y: 90.0, ..front() };
+    let stack = extrude_stack(&[base.clone(), upper.clone()], b, o, side, &[], &[]).unwrap();
+    assert_eq!(stack.len(), 2);
+    // From the side: two slabs of 20, one in front of the other, 40 deep in all about the middle.
+    let (lo, hi) = (extent(&stack[0].facets), extent(&stack[1].facets));
+    assert!(close(lo.width(), 20.0, 1e-6) && close(hi.width(), 20.0, 1e-6), "{lo:?} {hi:?}");
+    assert!(close(lo.x0.min(hi.x0), 50.0 - 20.0, 1e-6) && close(lo.x1.max(hi.x1), 50.0 + 20.0, 1e-6), "{lo:?} {hi:?}");
+    assert!(close(lo.x0.max(hi.x0), lo.x1.min(hi.x1), 1e-6), "they meet: {lo:?} {hi:?}");
+    // Straight on, each covers its own square; no depth lays them flat.
+    let f = extrude_stack(&[base.clone(), upper.clone()], b, o, front(), &[], &[]).unwrap();
+    assert_eq!(extent(&f[1].facets), Rect::new(25.0, 25.0, 75.0, 75.0));
+    let flat = extrude_stack(&[base.clone(), upper.clone()], b, Extrude { depth: 0.0, ..o }, front(), &[], &[]).unwrap();
+    assert!(close(area(&flat[1].facets), 2500.0, 1e-6));
+    assert!(extrude_stack(&vec![PathData::default(); MAX_LAYERS + 1], b, o, front(), &[], &[]).is_err());
+    // Each layer its own depth: a slab of 10 under one of 30, 40 deep in all; a missing entry
+    // takes the options' depth, a bad one is clamped.
+    let own = extrude_stack(&[base.clone(), upper.clone()], b, o, side, &[], &[10.0, 30.0]).unwrap();
+    let (lo, hi) = (extent(&own[0].facets), extent(&own[1].facets));
+    assert!(close(lo.width(), 10.0, 1e-6) && close(hi.width(), 30.0, 1e-6), "{lo:?} {hi:?}");
+    assert!(close(lo.x0.min(hi.x0), 30.0, 1e-6) && close(lo.x1.max(hi.x1), 70.0, 1e-6), "{lo:?} {hi:?}");
+    let partly = extrude_stack(&[base.clone(), upper.clone()], b, o, side, &[], &[5.0]).unwrap();
+    assert!(close(extent(&partly[1].facets).width(), 20.0, 1e-6));
+    let bad = extrude_stack(&[base, upper], b, o, side, &[], &[f64::NAN, 1e9]).unwrap();
+    assert!(close(extent(&bad[0].facets).width(), 20.0, 1e-6) && close(extent(&bad[1].facets).width(), 2000.0, 1e-3));
+}
+
 #[test]
 fn inflate_leaves_holes_open() {
     let mut b = square(0.0, 0.0, 100.0);
@@ -219,8 +320,22 @@ fn malformed_and_degenerate_input_is_bounded() {
     let f = extrude(&p, b, wild, View { rotation_x: f64::NAN, perspective: 9.0, ..front() }).unwrap();
     assert!(f.iter().flat_map(|f| f.contours.iter().flatten()).all(|q| q.x.is_finite() && q.y.is_finite()));
     assert!(
-        inflate(&p, b, Inflate { depth: -5.0, volume: f64::NAN, both_sides: true, twist: f64::INFINITY, taper: f64::NAN, cap: true }, front())
-            .is_ok()
+        inflate(
+            &p,
+            b,
+            Inflate {
+                depth: -5.0,
+                volume: f64::NAN,
+                pillow: f64::NAN,
+                both_sides: true,
+                twist: f64::INFINITY,
+                taper: f64::NAN,
+                cap: true,
+                draft: false
+            },
+            front()
+        )
+        .is_ok()
     );
     assert!(extrude(&PathData::default(), b, Extrude::default(), front()).unwrap().is_empty());
     // A line has no area to extrude.
@@ -255,10 +370,10 @@ fn the_inflate_membrane_matches_known_solutions() {
     let mut c = BezPath::new();
     c.extend(vectorcraft_geom::kurbo::Shape::path_elements(&vectorcraft_geom::kurbo::Circle::new((100.0, 100.0), 50.0), 0.01));
     let (p, b) = shape(&c);
-    let disc = Membrane::solve(&rings(&p, 100.0, MAX_SOLID_POINTS).unwrap(), b.origin(), b.width() / 48.0, 49, 49);
+    let disc = Membrane::solve(&rings(&p, 100.0, MAX_SOLID_POINTS).unwrap(), b.origin(), b.width() / 48.0, 49, 49, None);
     assert!(close(disc.peak, 50.0 * 50.0 / 4.0, 625.0 * 0.02), "{}", disc.peak);
     let (p, b) = shape(&square(0.0, 0.0, 100.0));
-    let sq = Membrane::solve(&rings(&p, 100.0, MAX_SOLID_POINTS).unwrap(), b.origin(), 100.0 / 48.0, 49, 49);
+    let sq = Membrane::solve(&rings(&p, 100.0, MAX_SOLID_POINTS).unwrap(), b.origin(), 100.0 / 48.0, 49, 49, None);
     assert!(close(sq.peak, 0.07367 * 100.0 * 100.0, 736.7 * 0.02), "{}", sq.peak);
     // Smooth across the middle: no crease where a distance-to-the-edge height would have one
     // (the diagonals). The second difference along a diagonal stays small and even.
@@ -474,4 +589,227 @@ fn a_flat_twisted_inflate_matches_the_extrusion() {
             assert!(close(a, c, 1e-6), "view ({x}, {y}): extrusion {e:?}, inflate {i:?}");
         }
     }
+}
+
+#[test]
+fn coloured_lights_tint_each_channel_and_the_defaults_stay_grey() {
+    let (p, b) = shape(&square(0.0, 0.0, 100.0));
+    for f in extrude(&p, b, Extrude::default(), View::default()).unwrap() {
+        assert!(f.tint.iter().all(|t| close(*t, f.brightness, 1e-12)), "white light: a grey tint");
+    }
+    let red = View { light_color: [1.0, 0.0, 0.0], ambient: 0.0, ..View::default() };
+    for f in extrude(&p, b, Extrude::default(), red).unwrap() {
+        assert!(f.tint[1] == 0.0 && f.tint[2] == 0.0, "{:?}", f.tint);
+    }
+    // A second light from the right brightens the right wall.
+    let base = View { rotation_y: -40.0, ..front() };
+    let right_wall = |v: View| extrude(&p, b, Extrude::default(), v).unwrap().iter().map(|f| f.brightness).fold(0.0, f64::max);
+    let lit = View { extra_lights: [Light { azimuth: 90.0, elevation: 0.0, intensity: 1.0, ..Light::default() }; 3], extra_count: 1, ..base };
+    assert!(right_wall(lit) > right_wall(base));
+}
+
+#[test]
+fn a_solid_casts_its_shadow_below_or_behind_when_asked() {
+    let (p, b) = shape(&square(0.0, 0.0, 100.0));
+    let none = extrude_lit(&p, b, Extrude::default(), View::default()).unwrap();
+    assert!(none.shadow.is_none());
+    let below = View { shadow: ShadowPosition::Below, shadow_distance: 20.0, ..View::default() };
+    let s = extrude_lit(&p, b, Extrude::default(), below).unwrap();
+    let solid = extent(&s.facets);
+    let shadow = s.shadow.expect("a shadow below").bounds().unwrap();
+    assert!(shadow.y1 > solid.y1, "the shadow reaches below the solid: {shadow:?} {solid:?}");
+    let behind = View { shadow: ShadowPosition::Behind, ..View::default() };
+    assert!(inflate_lit(&p, b, Inflate::default(), behind).unwrap().shadow.is_some());
+    assert!(plane_lit(&p, b, behind).unwrap().shadow.is_some());
+    // A light from below casts nothing on the ground.
+    let under = View { light_elevation: -40.0, ..below };
+    assert!(extrude_lit(&p, b, Extrude::default(), under).unwrap().shadow.is_none());
+    // Revolve casts one too.
+    let r = Revolve { shadow: ShadowPosition::Below, ..Revolve::default() };
+    assert!(crate::revolve_lit(&p, b, r).unwrap().shadow.is_some());
+}
+
+/// Straight on, every edge of an inflated surface's pieces away from the outline is shared with
+/// the piece next to it, the other way round: no cracks, no edges ending partway along another's
+/// (T-junctions), and no zero-width slivers tying two parts of a cell together along its side,
+/// which used to rise into fins where the outline left a cell and came back (a star's points).
+#[test]
+fn an_inflated_surface_is_watertight() {
+    use vectorcraft_geom::kurbo::{Circle, Shape};
+    let mut ring = BezPath::new();
+    ring.extend(Circle::new((100.0, 100.0), 80.0).path_elements(0.01));
+    let hole: BezPath = Circle::new((100.0, 100.0), 35.0).path_elements(0.01).collect();
+    ring.extend(hole.reverse_subpaths());
+    let mut star = BezPath::new();
+    for k in 0..10 {
+        let a = std::f64::consts::PI * f64::from(k) / 5.0;
+        let r = if k % 2 == 0 { 90.0 } else { 40.0 };
+        let p = (100.0 + r * a.sin(), 100.0 - r * a.cos());
+        if k == 0 { star.move_to(p) } else { star.line_to(p) }
+    }
+    star.close_path();
+    for (name, b) in [("ring", ring), ("star", star)] {
+        let (p, r) = shape(&b);
+        let f = inflate(&p, r, Inflate::default(), front()).unwrap();
+        let outline = rings(&p, r.width().max(r.height()), MAX_SOLID_POINTS).unwrap();
+        let edges = Edges::new(&outline);
+        assert!(!rings_cross(&outline, &edges), "{name}");
+        let key = |p: Point| ((p.x * 1e6).round() as i64, (p.y * 1e6).round() as i64);
+        let all: Vec<(Point, Point)> = f
+            .iter()
+            .flat_map(|f| f.contours.iter())
+            .flat_map(|c| c.iter().zip(c.iter().cycle().skip(1)).take(c.len()).map(|(a, b)| (*a, *b)))
+            .collect();
+        let set: std::collections::HashSet<_> = all.iter().map(|(a, b)| (key(*a), key(*b))).collect();
+        for (a, b) in &all {
+            assert!(filled(&outline, *a) || edges.distance(*a) < 1e-6, "{name}: {a:?} is outside the shape");
+            let mid = a.midpoint(*b);
+            assert!(set.contains(&(key(*b), key(*a))) || edges.distance(mid) < 1e-6, "{name}: {a:?}–{b:?} is shared with no piece");
+        }
+    }
+}
+
+/// The exact cut of a cell keeps parts the outline leaves and re-enters apart, and its holes.
+#[test]
+fn a_cell_is_cut_to_the_shape_exactly() {
+    // A U: the cell [0, 10]² takes both arms' feet, which only meet below it.
+    let u = vec![
+        Point::new(0.0, -10.0),
+        Point::new(10.0, -10.0),
+        Point::new(10.0, 20.0),
+        Point::new(7.0, 20.0),
+        Point::new(7.0, -5.0),
+        Point::new(3.0, -5.0),
+        Point::new(3.0, 20.0),
+        Point::new(0.0, 20.0),
+    ];
+    let mut u = u;
+    if signed_area(&u) < 0.0 {
+        u.reverse();
+    }
+    let parts = cut_cell(&[u.clone()], Rect::new(-1.0, 0.0, 11.0, 10.0));
+    assert_eq!(parts.len(), 2, "{parts:?}");
+    let total: f64 = parts.iter().map(|c| signed_area(c)).sum();
+    assert!(close(total, 2.0 * 3.0 * 10.0, 1e-9), "{total}");
+    // A cell inside a hole is empty; a cell round a hole keeps it.
+    let mut square = vec![Point::new(0.0, 0.0), Point::new(100.0, 0.0), Point::new(100.0, 100.0), Point::new(0.0, 100.0)];
+    if signed_area(&square) < 0.0 {
+        square.reverse();
+    }
+    let mut hole = vec![Point::new(40.0, 40.0), Point::new(60.0, 40.0), Point::new(60.0, 60.0), Point::new(40.0, 60.0)];
+    if signed_area(&hole) > 0.0 {
+        hole.reverse();
+    }
+    let shape = [square, hole];
+    assert!(cut_cell(&shape, Rect::new(45.0, 45.0, 55.0, 55.0)).is_empty());
+    let round: f64 = cut_cell(&shape, Rect::new(30.0, 30.0, 70.0, 70.0)).iter().map(|c| signed_area(c)).sum();
+    assert!(close(round, 40.0 * 40.0 - 20.0 * 20.0, 1e-9), "{round}");
+    let half: f64 = cut_cell(&shape, Rect::new(50.0, 30.0, 70.0, 70.0)).iter().map(|c| signed_area(c)).sum();
+    assert!(close(half, 20.0 * 40.0 - 10.0 * 20.0, 1e-9), "{half}");
+    assert!(close(cut_cell(&shape, Rect::new(-5.0, -5.0, 5.0, 5.0)).iter().map(|c| signed_area(c)).sum(), 25.0, 1e-9));
+    // Crossing rings are told apart from ones that merely meet at a corner.
+    let tri = |o: f64| vec![Point::new(o, 0.0), Point::new(o + 10.0, 0.0), Point::new(o + 5.0, 8.0)];
+    assert!(rings_cross(&[tri(0.0), tri(5.0)], &Edges::new(&[tri(0.0), tri(5.0)])));
+    assert!(!rings_cross(&[tri(0.0), tri(20.0)], &Edges::new(&[tri(0.0), tri(20.0)])));
+}
+
+/// A ring's surface is round, so its normals point straight across the ring, with no sideways
+/// lean, rim included: a mirror finish shows a lean of a degree or two as streaks across the rim.
+/// (The finely flattened outline once had too few pieces per curve, and the slope near the
+/// outline was read from grid nodes a hair from it: both leaned the normals by up to 0.05.)
+#[test]
+fn an_inflated_ring_has_no_sideways_lean_in_its_normals() {
+    use vectorcraft_geom::kurbo::{Circle, Shape};
+    let mut ring = BezPath::new();
+    ring.extend(Circle::new((100.0, 100.0), 80.0).path_elements(0.01));
+    let hole: BezPath = Circle::new((100.0, 100.0), 35.0).path_elements(0.01).collect();
+    ring.extend(hole.reverse_subpaths());
+    let (p, r) = shape(&ring);
+    let view = View { material: Material { smooth: true, ..Material::default() }, ..front() };
+    let shaded = inflate_lit(&p, r, Inflate { volume: 80.0, ..Inflate::default() }, view).unwrap();
+    let shading = shaded.shading.unwrap();
+    // The ring's centre in view space: the mean of its front's points.
+    let front: Vec<(V3, V3)> =
+        shading.polys().iter().flat_map(|poly| poly.positions.iter().copied().zip(poly.normals.iter().copied())).filter(|(_, n)| n.2 > 0.0).collect();
+    let k = front.len() as f64;
+    let (cx, cy) = front.iter().fold((0.0, 0.0), |s, (p, _)| (s.0 + p.0 / k, s.1 + p.1 / k));
+    let mut worst: f64 = 0.0;
+    for (p, n) in &front {
+        let (dx, dy) = (p.0 - cx, p.1 - cy);
+        let l = dx.hypot(dy);
+        if l < 1.0 {
+            continue;
+        }
+        worst = worst.max(((-dy * n.0 + dx * n.1) / l).abs());
+    }
+    assert!(worst < 0.012, "the normals lean sideways by up to {worst}");
+}
+
+/// A square's ring, as art to lay on a surface.
+fn art_square(x: f64, y: f64, s: f64) -> Vec<Vec<Point>> {
+    vec![vec![Point::new(x, y), Point::new(x + s, y), Point::new(x + s, y + s), Point::new(x, y + s)]]
+}
+
+#[test]
+fn art_on_a_flat_front_seen_straight_on_stays_where_it_is() {
+    let (p, b) = shape(&square(0.0, 0.0, 100.0));
+    let art = [art_square(20.0, 30.0, 40.0)];
+    for s in [plane_mapped(&p, b, front(), &art).unwrap(), extrude_mapped(&p, b, Extrude::default(), front(), &art).unwrap()] {
+        let [m] = s.mapped.as_slice() else { panic!("one piece") };
+        let ring = &m.contours[0];
+        // Its edges are cut into short pieces, all on the square's outline.
+        assert!(ring.len() > 4);
+        assert!(
+            ring.iter().all(|q| (q.x - 20.0).abs() < 1e-9 || (q.x - 60.0).abs() < 1e-9 || (q.y - 30.0).abs() < 1e-9 || (q.y - 70.0).abs() < 1e-9)
+        );
+        assert!(ring.iter().all(|q| (20.0 - 1e-9..=60.0 + 1e-9).contains(&q.x) && (30.0 - 1e-9..=70.0 + 1e-9).contains(&q.y)));
+    }
+}
+
+#[test]
+fn art_on_a_front_turned_away_is_hidden() {
+    let (p, b) = shape(&square(0.0, 0.0, 100.0));
+    let art = [art_square(20.0, 30.0, 40.0)];
+    let away = View { rotation_y: 150.0, ..front() };
+    let s = extrude_mapped(&p, b, Extrude::default(), away, &art).unwrap();
+    assert!(s.mapped[0].contours.is_empty());
+    // Turned part way, it foreshortens with the front.
+    let turned = View { rotation_y: 50.0, ..front() };
+    let s = extrude_mapped(&p, b, Extrude::default(), turned, &art).unwrap();
+    let xs: Vec<f64> = s.mapped[0].contours[0].iter().map(|q| q.x).collect();
+    let width = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max) - xs.iter().copied().fold(f64::INFINITY, f64::min);
+    assert!(close(width, 40.0 * 50f64.to_radians().cos(), 1e-6), "{width}");
+}
+
+#[test]
+fn art_on_an_inflated_front_rides_the_puff() {
+    let mut circle = BezPath::new();
+    circle.extend(vectorcraft_geom::kurbo::Shape::path_elements(&vectorcraft_geom::kurbo::Circle::new((50.0, 50.0), 50.0), 0.01));
+    let (p, b) = shape(&circle);
+    let tilted = View { rotation_x: -60.0, ..front() };
+    let art = [art_square(45.0, 45.0, 10.0), art_square(50.0, 0.0, 0.0001)];
+    let puffed = inflate_mapped(&p, b, Inflate::default(), tilted, &art).unwrap();
+    let flat = plane_mapped(&p, b, tilted, &art).unwrap();
+    // The middle is lifted by the puff (50 pt at 50 %), so tilted it shows 43 pt lower down.
+    let centre = |s: &Shaded| s.mapped[0].contours[0].iter().map(|q| q.y).sum::<f64>() / s.mapped[0].contours[0].len() as f64;
+    assert!(close(centre(&puffed) - centre(&flat), 50.0 * 60f64.to_radians().sin(), 2.0), "{} {}", centre(&flat), centre(&puffed));
+    // At the outline the puff is nothing.
+    let rim = |s: &Shaded| s.mapped[1].contours[0][0];
+    assert!(rim(&puffed).distance(rim(&flat)) < 0.5, "{:?} {:?}", rim(&puffed), rim(&flat));
+    // Shaded like the surface under it: in the middle it faces out as flat art does; at the rim
+    // it turns to the side.
+    assert_eq!(puffed.mapped[0].shade, flat.mapped[0].shade);
+    assert_ne!(puffed.mapped[1].shade, flat.mapped[1].shade);
+}
+
+#[test]
+fn mapped_art_is_bounded() {
+    let (p, b) = shape(&square(0.0, 0.0, 100.0));
+    // A huge piece is cut into at most so many points; later pieces are left off.
+    let huge = vec![vec![Point::new(0.0, 0.0), Point::new(1e7, 0.0), Point::new(1e7, 1e7)]; 50];
+    let s = plane_mapped(&p, b, front(), &[huge.clone(), huge]).unwrap();
+    assert!(s.mapped.iter().flat_map(|m| m.contours.iter().flatten()).count() <= MAX_MAPPED_POINTS);
+    let bad = [vec![vec![Point::new(f64::NAN, 0.0), Point::new(1.0, 1.0), Point::new(0.0, 1.0)]]];
+    assert!(plane_mapped(&p, b, front(), &bad).is_err());
+    assert!(plane_mapped(&p, b, front(), &[vec![]]).unwrap().mapped[0].contours.is_empty());
 }

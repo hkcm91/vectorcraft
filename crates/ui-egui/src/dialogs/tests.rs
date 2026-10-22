@@ -237,6 +237,80 @@ fn effect_dialog_applies_to_its_appearance_item() {
 }
 
 #[test]
+fn materials_adds_a_flat_rotate_or_edits_the_3d_effect_on_its_material_tab() {
+    let mut app = app();
+    let id = app.run("shape.rectangle", json!({"x": 10, "y": 10, "width": 50, "height": 50})).unwrap()["id"].as_u64().unwrap();
+    app.run("select.all", json!({})).unwrap();
+    let node = |app: &VectorcraftApp| app.session.doc().unwrap().doc.node(vectorcraft_doc::NodeId(id)).unwrap().clone();
+    // No 3D effect yet: a Rotate that doesn't turn, opened on the Material tab.
+    app.run("effect.materials", json!({"item": null})).unwrap();
+    let d = app.ui.dialog.as_ref().unwrap();
+    assert_eq!((d.str("__effect"), d.str("__tab")), ("threeD.rotate".to_string(), "material".to_string()));
+    app.ui.dialog.as_mut().unwrap().fields.insert("metallic".into(), json!(80));
+    frame(&mut app, Default::default());
+    confirm(&mut app).unwrap();
+    let fx = node(&app).appearance.effects.clone();
+    assert_eq!(fx.len(), 1);
+    assert_eq!(fx[0].id, "threeD.rotate");
+    for axis in ["rotationX", "rotationY", "rotationZ"] {
+        assert_eq!(fx[0].params[axis].as_f64(), Some(0.0), "{axis}: face on, the art stays flat");
+    }
+    assert_eq!(fx[0].params["metallic"].as_f64(), Some(80.0));
+    // Again: the applied effect is edited in place, not a second one added.
+    app.run("effect.materials", json!({"item": null})).unwrap();
+    let d = app.ui.dialog.as_ref().unwrap();
+    assert_eq!((d.str("__tab"), d.fields.get("__index").cloned()), ("material".to_string(), Some(json!(0))));
+    app.ui.dialog.as_mut().unwrap().fields.insert("roughness".into(), json!(10));
+    frame(&mut app, Default::default());
+    confirm(&mut app).unwrap();
+    let fx = node(&app).appearance.effects.clone();
+    assert_eq!(fx.len(), 1, "edited, not added");
+    assert_eq!(fx[0].params["roughness"].as_f64(), Some(10.0));
+    // Another 3D type already applied is the one edited, keeping its turn.
+    let mut app2 = self::app();
+    app2.run("shape.rectangle", json!({"x": 10, "y": 10, "width": 50, "height": 50})).unwrap();
+    app2.run("select.all", json!({})).unwrap();
+    app2.run("effect.apply", json!({"effect": "threeD.extrude", "params": {"rotationX": 30}})).unwrap();
+    app2.run("effect.materials", json!({"item": null})).unwrap();
+    let d = app2.ui.dialog.as_ref().unwrap();
+    assert_eq!(d.str("__effect"), "threeD.extrude");
+    assert_eq!(d.fields.get("rotationX").and_then(|v| v.as_f64()), Some(30.0));
+}
+
+#[test]
+fn extrude_and_inflate_on_a_group_offer_a_depth_per_layer() {
+    let mut app = app();
+    for (x, s) in [(10, 120), (30, 80), (50, 40)] {
+        app.run("shape.rectangle", json!({"x": x, "y": x, "width": s, "height": s})).unwrap();
+    }
+    app.run("select.all", json!({})).unwrap();
+    let group = app.run("object.group", json!({})).unwrap();
+    let id = group["id"].as_u64().or_else(|| group["ids"][0].as_u64());
+    app.run("effect.dialog", json!({"effect": "threeD.extrude", "item": null})).unwrap();
+    app.ui.dialog.as_mut().unwrap().fields.insert("__tab".into(), json!("object"));
+    frame(&mut app, Default::default());
+    let d = app.ui.dialog.as_ref().unwrap();
+    assert!((0..3).all(|k| d.fields.contains_key(&format!("__layerDepth{k}"))), "a field per layer");
+    assert!(d.fields.get("layerDepths").is_none_or(|v| v == &json!([])), "untouched, every layer follows Depth");
+    app.ui.dialog.as_mut().unwrap().fields.insert("layerDepths".into(), json!([10, 30, 60]));
+    frame(&mut app, Default::default());
+    confirm(&mut app).unwrap();
+    let doc = &app.session.doc().unwrap().doc;
+    let g = match id {
+        Some(id) => doc.node(vectorcraft_doc::NodeId(id)).unwrap().clone(),
+        None => doc.node(*app.session.doc().unwrap().selection.objects.first().unwrap()).unwrap().clone(),
+    };
+    assert_eq!(g.appearance.effects[0].params["layerDepths"], json!([10, 30, 60]));
+    assert!(vectorcraft_effects::solid_art(&g).is_some());
+    // Inflate offers the same, on its Object tab.
+    app.run("effect.dialog", json!({"effect": "threeD.inflate", "item": null})).unwrap();
+    app.ui.dialog.as_mut().unwrap().fields.insert("__tab".into(), json!("object"));
+    frame(&mut app, Default::default());
+    let d = app.ui.dialog.as_ref().unwrap();
+    assert!((0..3).all(|k| d.fields.contains_key(&format!("__layerDepth{k}"))), "a field per layer");
+}
+
+#[test]
 fn revolve_dialog_preview_cancel_confirm_and_undo() {
     let mut app = app();
     app.run("path.create", json!({"d":"M150 40 L180 60 L180 140 L150 160"})).unwrap();

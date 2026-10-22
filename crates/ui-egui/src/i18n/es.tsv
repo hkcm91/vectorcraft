@@ -4667,9 +4667,15 @@ mark-style	Japanese	Japonesas
 	Taper	Estrechamiento
 	Twist	Torsión
 	Volume	Volumen
+	Pillow	Almohada
+	Layer Depths	Profundidad de capas
+	Layer {n} (bottom)	Capa {n} (abajo)
+	Layer {n}	Capa {n}
+	Use Depth for All	Usar profundidad para todas
 3d	Cap	Tapa
 3d	Solid	Sólido
 3d	Hollow	Hueco
+3d	Surface	Superficie
 3d	Bevel	Bisel
 3d	Rounded	Redondeado
 3d	Space	Espacio
@@ -4688,3 +4694,85 @@ mark-style	Japanese	Japonesas
 @msg	unknown parameter `{key}`; the command takes: {keys}	parámetro desconocido `{key}`; el comando acepta: {keys}
 	Load EPS into Clipboard	Cargar EPS en el portapapeles
 @msg	an image of {w} × {h} pixels is too large to draw	una imagen de {w} × {h} píxeles es demasiado grande para dibujarse
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Arcada
+	Arch Tool	Herramienta Arcada
+	Arch Tool Options	Opciones de la herramienta Arcada
+	Arch Count:	Número de arcos:
+	Thickness:	Grosor:
+	Segments:	Segmentos:
+	Close into Rings	Cerrar en anillos
+	Color Palette	Paleta de colores
+	Add Color	Añadir color
+	Remove Color	Quitar color
+	Shuffle Colors	Mezclar colores
+	Fill Style	Estilo de relleno
+	Wide	Ancho
+	Pointed	Apuntado
+	Wavy	Ondulado
+	Segmented	Segmentado
+	Flat	Plano
+	Glossy	Brillante
+	Jelly	Gelatina
+	Pearlescent	Nacarado
+	Classic Rainbow	Arcoíris clásico
+	Candy Arch	Arcada de caramelo
+	Double Arch	Arcada doble
+	Scallop Gate	Puerta festoneada
+	Dream Tunnel	Túnel de ensueño
+	Wavy Arch	Arcada ondulada
+# Dimension tool and its options.
+	Dimension	Cota
+	Dimension Tool	Herramienta Cota
+	Dimension Tool Options	Opciones de la herramienta Cota
+	Angular	Angular
+	Aligned	Alineada
+	Precision:	Precisión:
+	Ends:	Extremos:
+	Tick	Trazo
+	Dot	Punto
+	Line Weight:	Grosor de línea:
+	Font Size:	Tamaño de fuente:
+	Show Units	Mostrar unidades
+# 3D lighting and shadows.
+	Light Source	Fuente de luz
+	Softness	Suavidad
+	Shadows	Sombras
+	Below Object	Debajo del objeto
+	Behind Object	Detrás del objeto
+	Distance	Distancia
+	Delete Light	Eliminar luz
+	Add Light	Añadir luz
+	Add Graphic	Añadir gráfico
+	Finish	Acabado
+	Delete Graphic	Eliminar gráfico
+	Make a symbol to lay it on the surface.	Cree un símbolo para colocarlo sobre la superficie.
+	More Lights	Más luces
+# 3D materials and lighting presets.
+	Material	Material
+	Highlight	Brillo especular
+	Roughness	Rugosidad
+	Metallic	Metálico
+	Rim Light	Luz de contorno
+	Cel Bands	Bandas cel
+	Reflections	Reflejos
+	Outdoor	Exterior
+	Sunset	Atardecer
+	Ambient Occlusion	Oclusión ambiental
+	Contact Shadow	Sombra de contacto
+	Straight	Recta
+	From Light	Desde la luz
+	Smooth shading	Sombreado suave
+	Ambient Color	Color de luz ambiental
+	Soft Touch	Tacto suave
+	Plastic	Plástico
+	Metal	Metal
+	Chrome	Cromo
+	Rim Glow	Brillo de contorno
+	Toon	Toon
+	Standard	Estándar
+	Studio	Estudio
+	Top Light	Luz cenital
+	Dramatic	Dramática
+	Warm & Cool	Cálida y fría
+3d	Matte	Mate

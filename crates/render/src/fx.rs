@@ -792,8 +792,8 @@ impl Renderer {
         };
         let container = is_container(a);
         let art = match effects::crop_marks_art(a)
-            .or_else(|| effects::revolve_art(a))
-            .or_else(|| effects::solid_art(a))
+            .or_else(|| effects::revolve_art_in(a, Some(doc)))
+            .or_else(|| effects::solid_art_in(a, Some(doc)))
             .or_else(|| effects::reshape(a, symbol.as_ref()))
         {
             Some(r) => r,

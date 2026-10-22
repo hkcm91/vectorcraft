@@ -4295,9 +4295,15 @@ lighting	Light	Luce
 	Taper	Rastremazione
 	Twist	Torsione
 	Volume	Volume
+	Pillow	Cuscino
+	Layer Depths	Profondità dei livelli
+	Layer {n} (bottom)	Livello {n} (in basso)
+	Layer {n}	Livello {n}
+	Use Depth for All	Usa la profondità per tutti
 3d	Cap	Chiusura
 3d	Solid	Pieno
 3d	Hollow	Cavo
+3d	Surface	Superficie
 3d	Bevel	Smusso
 3d	Rounded	Arrotondato
 3d	Space	Spazio
@@ -4316,3 +4322,89 @@ lighting	Light	Luce
 @msg	unknown parameter `{key}`; the command takes: {keys}	parametro sconosciuto `{key}`; il comando accetta: {keys}
 	Load EPS into Clipboard	Carica EPS negli appunti
 @msg	an image of {w} × {h} pixels is too large to draw	un'immagine di {w} × {h} pixel è troppo grande per essere disegnata
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Arcata
+	Arch Tool	Strumento Arcata
+	Arch Tool Options	Opzioni strumento Arcata
+	Arch Count:	Numero di archi:
+	Thickness:	Spessore:
+	Segments:	Segmenti:
+	Close into Rings	Chiudi in anelli
+	Color Palette	Tavolozza colori
+	Add Color	Aggiungi colore
+	Remove Color	Rimuovi colore
+	Shuffle Colors	Mescola colori
+	Fill Style	Stile di riempimento
+	Wide	Largo
+	Pointed	A sesto acuto
+	Scallop	Smerlato
+	Wavy	Ondulato
+	Segmented	Segmentato
+	Flat	Piatto
+	Glossy	Lucido
+	Jelly	Gelatina
+	Muted	Smorzato
+	Pearlescent	Perlato
+	Classic Rainbow	Arcobaleno classico
+	Candy Arch	Arcata caramella
+	Double Arch	Arcata doppia
+	Scallop Gate	Portale smerlato
+	Dream Tunnel	Tunnel da sogno
+	Wavy Arch	Arcata ondulata
+# Dimension tool and its options.
+	Dimension	Quota
+	Dimension Tool	Strumento Quota
+	Dimension Tool Options	Opzioni strumento Quota
+	Linear	Lineare
+	Angular	Angolare
+	Aligned	Allineata
+	Precision:	Precisione:
+	Ends:	Estremità:
+	Arrow	Freccia
+	Tick	Tacca
+	Dot	Punto
+	Line Weight:	Spessore linea:
+	Font Size:	Dimensione font:
+	Show Units	Mostra unità
+# 3D lighting and shadows.
+	Light Source	Sorgente luminosa
+	Softness	Morbidezza
+	Shadows	Ombre
+	Below Object	Sotto l’oggetto
+	Behind Object	Dietro l’oggetto
+	Distance	Distanza
+	Delete Light	Elimina luce
+	Add Light	Aggiungi luce
+	Add Graphic	Aggiungi grafica
+	Finish	Finitura
+	Delete Graphic	Elimina grafica
+	Make a symbol to lay it on the surface.	Crea un simbolo per applicarlo sulla superficie.
+	More Lights	Altre luci
+# 3D materials and lighting presets.
+	Material	Materiale
+	Highlight	Riflesso
+	Roughness	Ruvidità
+	Metallic	Metallico
+	Rim Light	Luce di contorno
+	Cel Bands	Bande cel
+	Reflections	Riflessi
+	Outdoor	Esterno
+	Sunset	Tramonto
+	Ambient Occlusion	Occlusione ambientale
+	Contact Shadow	Ombra di contatto
+	Straight	Dritta
+	From Light	Dalla luce
+	Smooth shading	Ombreggiatura morbida
+	Ambient Color	Colore luce ambiente
+	Soft Touch	Soft touch
+	Plastic	Plastica
+	Metal	Metallo
+	Chrome	Cromo
+	Rim Glow	Bagliore di contorno
+	Toon	Toon
+	Standard	Standard
+	Studio	Studio
+	Top Light	Luce dall’alto
+	Dramatic	Drammatica
+	Warm & Cool	Caldo e freddo
+3d	Matte	Opaco

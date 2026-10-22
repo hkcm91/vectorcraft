@@ -64,13 +64,19 @@ fn controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
     if id != REVOLVE {
         return solid_controls(app, ui, d, &id);
     }
-    let lighting = super::revolve_gizmo::lighting(d);
-    if let Some(tab) = widgets::tab_bar(ui, &[tl!("Rotation"), tl!("Lighting")], usize::from(lighting)) {
-        d.fields.insert("__gizmo".into(), json!(if tab == 1 { "light" } else { "rotation" }));
+    let current = if super::revolve_gizmo::lighting(d) { 2 } else { usize::from(d.str("__tab") == "material") };
+    if let Some(tab) = widgets::tab_bar(ui, &[tl!("Rotation"), tl!("Material"), tl!("Lighting")], current) {
+        d.fields.insert("__gizmo".into(), json!(if tab == 2 { "light" } else { "rotation" }));
+        d.fields.insert("__tab".into(), json!(if tab == 1 { "material" } else { "rotation" }));
     }
     ui.add_space(8.0);
     if super::revolve_gizmo::lighting(d) {
-        lighting_controls(ui, d);
+        lighting_controls(ui, d, app.session.general_unit());
+        return;
+    }
+    if d.str("__tab") == "material" {
+        material_controls(ui, d);
+        graphics_controls(app, ui, d);
         return;
     }
     let unit = app.session.general_unit();
@@ -90,6 +96,7 @@ fn controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
         }
     });
     number(ui, d, "offset", tl!("Offset"), (0.0, 100000.0), "", 1, Some(unit));
+    choice(ui, d, "cap", c3("Cap"), &[(json!(true), c3("Solid")), (json!(false), c3("Hollow"))]);
     ui.add_space(10.0);
     heading(ui, tl!("View"));
     for (key, name) in [("rotationX", tl!("Rotation X")), ("rotationY", tl!("Rotation Y")), ("rotationZ", tl!("Rotation Z"))] {
@@ -132,33 +139,53 @@ fn solid_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog, id: &
     if object {
         tabs.push(tl!("Object"));
     }
-    tabs.extend([tl!("Rotation"), tl!("Lighting")]);
+    tabs.extend([tl!("Rotation"), tl!("Material"), tl!("Lighting")]);
+    let tab_key = d.str("__tab");
     let current = if super::revolve_gizmo::lighting(d) {
         tabs.len() - 1
-    } else if object && d.str("__tab") != "rotation" {
+    } else if tab_key == "material" {
+        tabs.len() - 2
+    } else if object && tab_key != "rotation" {
         0
     } else {
-        tabs.len() - 2
+        tabs.len() - 3
     };
     if let Some(tab) = widgets::tab_bar(ui, &tabs, current) {
         let light = tab + 1 == tabs.len();
         d.fields.insert("__gizmo".into(), json!(if light { "light" } else { "rotation" }));
-        d.fields.insert("__tab".into(), json!(if object && tab == 0 { "object" } else { "rotation" }));
+        let key = if tab + 2 == tabs.len() {
+            "material"
+        } else if object && tab == 0 {
+            "object"
+        } else {
+            "rotation"
+        };
+        d.fields.insert("__tab".into(), json!(key));
     }
     ui.add_space(8.0);
     if super::revolve_gizmo::lighting(d) {
-        lighting_controls(ui, d);
+        lighting_controls(ui, d, app.session.general_unit());
+    } else if d.str("__tab") == "material" {
+        material_controls(ui, d);
+        graphics_controls(app, ui, d);
     } else if object && d.str("__tab") != "rotation" {
         let unit = app.session.general_unit();
+        let layers = app
+            .session
+            .active()
+            .and_then(|doc| doc.selection.objects.first().and_then(|id| doc.doc.node(*id)))
+            .map_or(0, vectorcraft_effects::layer_count);
         if id == EXTRUDE {
-            extrude_controls(ui, d, unit);
+            extrude_controls(ui, d, unit, layers);
         } else {
             heading(ui, tl!("Object"));
             number(ui, d, "depth", tl!("Depth"), (0.0, 2000.0), "", 1, Some(unit));
+            layer_depth_controls(ui, d, unit, layers);
             number(ui, d, "twist", tl!("Twist"), (0.0, 360.0), "°", 1, None);
             number(ui, d, "taper", tl!("Taper"), (1.0, 100.0), "%", 1, None);
             choice(ui, d, "cap", c3("Cap"), &[(json!(true), c3("Solid")), (json!(false), c3("Hollow"))]);
             number(ui, d, "volume", tl!("Volume"), (0.0, 100.0), "%", 1, None);
+            number(ui, d, "pillow", tl!("Pillow"), (0.0, 100.0), "%", 1, None);
             toggle(ui, d, "bothSides", tl!("Both sides"), false);
         }
     } else {
@@ -167,9 +194,10 @@ fn solid_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog, id: &
 }
 
 /// Extrude & Bevel's depth, twist, taper, cap and bevel.
-fn extrude_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
+fn extrude_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit, layers: usize) {
     heading(ui, tl!("Object"));
     number(ui, d, "depth", tl!("Depth"), (0.0, 2000.0), "", 1, Some(unit));
+    layer_depth_controls(ui, d, unit, layers);
     number(ui, d, "twist", tl!("Twist"), (0.0, 360.0), "°", 1, None);
     number(ui, d, "taper", tl!("Taper"), (1.0, 100.0), "%", 1, None);
     choice(ui, d, "cap", c3("Cap"), &[(json!(true), c3("Solid")), (json!(false), c3("Hollow"))]);
@@ -192,6 +220,36 @@ fn extrude_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
         toggle(ui, d, "bevelInside", tl!("Bevel Inside"), false);
         toggle(ui, d, "bevelBothSides", tl!("Bevel both sides"), false);
     });
+}
+
+/// On a group of `layers` shapes, each one's depth (`layerDepths`, bottom first). Until one is
+/// changed every layer follows Depth; Use Depth for All goes back to that.
+fn layer_depth_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit, layers: usize) {
+    if layers < 2 {
+        return;
+    }
+    let depth = d.f64("depth", 50.0);
+    let own = vectorcraft_effects::layer_depths(&Value::Object(d.fields.clone()));
+    ui.add_space(6.0);
+    heading(ui, tl!("Layer Depths"));
+    let mut depths = Vec::with_capacity(layers);
+    let mut changed = false;
+    for k in 0..layers {
+        let key = format!("__layerDepth{k}");
+        let was = own.get(k).copied().filter(|v| v.is_finite()).unwrap_or(depth);
+        d.fields.insert(key.clone(), json!(was));
+        let name = crate::i18n::fmt(if k == 0 { tl!("Layer {n} (bottom)") } else { tl!("Layer {n}") }, &[("n", &(k + 1).to_string())]);
+        number(ui, d, &key, &name, (0.0, 2000.0), "", 1, Some(unit));
+        let now = d.f64(&key, was);
+        changed |= (now - was).abs() > 1e-9;
+        depths.push(now);
+    }
+    if changed {
+        d.fields.insert("layerDepths".into(), json!(depths));
+    }
+    if !own.is_empty() && widgets::flat_button(ui, tl!("Use Depth for All"), 130.0).clicked() {
+        d.fields.insert("layerDepths".into(), json!([]));
+    }
 }
 
 /// Rotation presets, rotation and perspective for Extrude & Bevel, Inflate and Rotate.
@@ -271,7 +329,79 @@ fn toggle(ui: &mut egui::Ui, d: &mut Dialog, key: &str, name: &str, default: boo
     });
 }
 
-fn lighting_controls(ui: &mut egui::Ui, d: &mut Dialog) {
+/// The lighting presets' names, in [`vectorcraft_effects::LIGHTING_PRESETS`] order.
+fn lighting_preset_names() -> [&'static str; 7] {
+    [tl!("Standard"), tl!("Studio"), tl!("Soft"), tl!("Top Light"), tl!("Dramatic"), tl!("Warm & Cool"), tl!("Flat")]
+}
+
+/// The material presets' names, in [`vectorcraft_effects::MATERIAL_PRESETS`] order.
+fn material_preset_names() -> [&'static str; 8] {
+    [c3("Matte"), tl!("Soft Touch"), tl!("Plastic"), tl!("Glossy"), tl!("Metal"), tl!("Chrome"), tl!("Rim Glow"), tl!("Toon")]
+}
+
+/// A Presets dropdown showing `names[current]` (Custom when None); the picked index.
+fn presets(ui: &mut egui::Ui, salt: &str, names: &[&str], current: Option<usize>) -> Option<usize> {
+    let mut picked = None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        label(ui, tl!("Presets"));
+        let width = VALUE_W + rail_width(ui) + 6.0;
+        let shown = current.and_then(|i| names.get(i).copied()).unwrap_or(tl!("Custom"));
+        picked = widgets::dropdown(ui, ("three-d-presets", salt), shown, names, width);
+    });
+    picked
+}
+
+/// The Material tab: how the surface takes the light.
+fn material_controls(ui: &mut egui::Ui, d: &mut Dialog) {
+    let id = d.str("__effect");
+    let defaults = vectorcraft_effects::default_params(&id).unwrap_or(Value::Null);
+    let value = |d: &Dialog, k: &str| d.f64(k, defaults.get(k).and_then(Value::as_f64).unwrap_or(0.0));
+    let current = vectorcraft_effects::MATERIAL_PRESETS.iter().position(|p| p.matches(&d.fields, &defaults));
+    heading(ui, tl!("Material"));
+    if let Some(k) = presets(ui, "material", &material_preset_names(), current)
+        && let Some(p) = vectorcraft_effects::MATERIAL_PRESETS.get(k)
+    {
+        d.fields.extend(p.params());
+    }
+    number(ui, d, "specular", tl!("Highlight"), (0.0, 100.0), "%", 1, None);
+    ui.add_enabled_ui(value(d, "specular") > 0.0, |ui| {
+        number(ui, d, "roughness", tl!("Roughness"), (0.0, 100.0), "%", 1, None);
+    });
+    number(ui, d, "metallic", tl!("Metallic"), (0.0, 100.0), "%", 1, None);
+    let backdrops = [
+        (json!("gradient"), tl!("Gradient")),
+        (json!("studio"), tl!("Studio")),
+        (json!("outdoor"), tl!("Outdoor")),
+        (json!("sunset"), tl!("Sunset")),
+        (json!("dark"), tl!("Dark")),
+    ];
+    // What metal and glossy surfaces mirror.
+    ui.add_enabled_ui(value(d, "specular") > 0.0 || value(d, "metallic") > 0.0, |ui| choice(ui, d, "environment", tl!("Reflections"), &backdrops));
+    ui.add_space(8.0);
+    heading(ui, tl!("Rim Light"));
+    number(ui, d, "rimLight", tl!("Intensity"), (0.0, 100.0), "%", 1, None);
+    ui.add_enabled_ui(value(d, "rimLight") > 0.0, |ui| colour(ui, d, "rimColor", tl!("Color")));
+    ui.add_space(8.0);
+    heading(ui, tl!("Shading"));
+    number(ui, d, "shadingSteps", tl!("Cel Bands"), (0.0, f64::from(vectorcraft_three_d::MAX_SHADING_STEPS)), "", 0, None);
+    toggle(ui, d, "smoothShading", tl!("Smooth shading"), true);
+    // Ambient occlusion needs the per-pixel shading's depth.
+    ui.add_enabled_ui(d.bool("smoothShading"), |ui| {
+        number(ui, d, "ambientOcclusion", tl!("Ambient Occlusion"), (0.0, 100.0), "%", 1, None);
+    });
+}
+
+fn lighting_controls(ui: &mut egui::Ui, d: &mut Dialog, unit: Unit) {
+    let defaults = vectorcraft_effects::default_params(&d.str("__effect")).unwrap_or(Value::Null);
+    let current = vectorcraft_effects::LIGHTING_PRESETS.iter().position(|p| p.matches(&d.fields, &defaults));
+    if let Some(k) = presets(ui, "lighting", &lighting_preset_names(), current)
+        && let Some(p) = vectorcraft_effects::LIGHTING_PRESETS.get(k)
+    {
+        d.fields.extend(p.params());
+        d.fields.insert("shade".into(), json!(true));
+    }
+    ui.add_space(4.0);
     ui.horizontal(|ui| {
         let shade = d.bool("shade");
         if widgets::check(ui, tl!("Shading"), shade, true) {
@@ -286,8 +416,178 @@ fn lighting_controls(ui: &mut egui::Ui, d: &mut Dialog) {
         number(ui, d, "lightAzimuth", tl!("Direction"), (-360.0, 360.0), "°", 1, None);
         number(ui, d, "lightElevation", tl!("Elevation"), (-90.0, 90.0), "°", 1, None);
         number(ui, d, "lightIntensity", tl!("Intensity"), (0.0, 100.0), "%", 1, None);
+        colour(ui, d, "lightColor", tl!("Color"));
+        number(ui, d, "lightSoftness", tl!("Softness"), (0.0, 100.0), "%", 1, None);
         number(ui, d, "ambient", tl!("Ambient"), (0.0, 100.0), "%", 1, None);
+        colour(ui, d, "ambientColor", tl!("Ambient Color"));
+        // More lights and the shadow fold away until they are used, keeping the tab compact.
+        let more = d.fields.get("lights").and_then(Value::as_array).is_some_and(|l| !l.is_empty());
+        egui::CollapsingHeader::new(tl!("More Lights")).id_salt("three-d-more-lights").default_open(more).show(ui, |ui| extra_lights(ui, d));
     });
+    let on = d.fields.get("shadow").and_then(Value::as_str).is_some_and(|s| s != "none");
+    egui::CollapsingHeader::new(tl!("Shadows")).id_salt("three-d-shadows").default_open(on).show(ui, |ui| {
+        let positions = [(json!("none"), tl!("None")), (json!("below"), tl!("Below Object")), (json!("behind"), tl!("Behind Object"))];
+        choice(ui, d, "shadow", tl!("Position"), &positions);
+        let on = d.fields.get("shadow").and_then(Value::as_str).is_some_and(|s| s != "none");
+        ui.add_enabled_ui(on, |ui| {
+            // Straight down onto the ground (or straight back onto the wall), or along the light.
+            let directions = [(json!("straight"), tl!("Straight")), (json!("light"), tl!("From Light"))];
+            choice(ui, d, "shadowDirection", tl!("Direction"), &directions);
+            number(ui, d, "shadowDistance", tl!("Distance"), (0.0, 100000.0), "", 1, Some(unit));
+            number(ui, d, "shadowOpacity", tl!("Opacity"), (0.0, 100.0), "%", 1, None);
+            number(ui, d, "shadowSoftness", tl!("Softness"), (0.0, 100.0), "%", 1, None);
+            number(ui, d, "contactShadow", tl!("Contact Shadow"), (0.0, 100.0), "%", 1, None);
+        });
+    });
+}
+
+/// A colour value (`#rrggbb`) for `key`, picked with the colour button, and its reset dot.
+fn colour(ui: &mut egui::Ui, d: &mut Dialog, key: &str, name: &str) {
+    let default = vectorcraft_effects::default_params(&d.str("__effect")).and_then(|p| p.get(key).and_then(Value::as_str).map(String::from));
+    let default = default.unwrap_or_else(|| "#ffffff".into());
+    let hex = d.fields.get(key).and_then(Value::as_str).map_or_else(|| default.clone(), String::from);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        label(ui, name);
+        if let Some(v) = colour_button(ui, &hex) {
+            d.fields.insert(key.into(), json!(v));
+        }
+        ui.add_space((ui.available_width() - 24.0).max(0.0));
+        if reset_dot(ui, key, !hex.eq_ignore_ascii_case(&default), &default) {
+            d.fields.insert(key.into(), json!(default));
+        }
+    });
+}
+
+/// egui's colour button for a `#rrggbb` value: the new value when it changed.
+fn colour_button(ui: &mut egui::Ui, hex: &str) -> Option<String> {
+    let mut rgb = vectorcraft_color::Color::from_hex(hex).map(|c| c.to_rgba8(1.0)).map_or([255, 255, 255], |[r, g, b, _]| [r, g, b]);
+    ui.color_edit_button_srgb(&mut rgb).changed().then(|| format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]))
+}
+
+/// The lights besides the main one (`lights`, up to three): each with its direction, elevation,
+/// intensity, colour and softness, and a button to delete it; Add Light below.
+fn extra_lights(ui: &mut egui::Ui, d: &mut Dialog) {
+    let mut lights: Vec<Value> = d.fields.get("lights").and_then(Value::as_array).cloned().unwrap_or_default();
+    let mut changed = false;
+    let mut delete = None;
+    for (i, light) in lights.iter_mut().enumerate() {
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            heading(ui, &format!("{} {}", tl!("Light Source"), i + 2));
+            let hex = light.get("color").and_then(Value::as_str).unwrap_or("#ffffff").to_string();
+            if let Some(v) = colour_button(ui, &hex) {
+                light["color"] = json!(v);
+                changed = true;
+            }
+            if widgets::icon_button(ui, "trash-2", tl!("Delete Light"), false, 22.0).clicked() {
+                delete = Some(i);
+            }
+        });
+        for (key, name, lo, hi, default, suffix) in [
+            ("azimuth", tl!("Direction"), -360.0, 360.0, 45.0, "°"),
+            ("elevation", tl!("Elevation"), -90.0, 90.0, 30.0, "°"),
+            ("intensity", tl!("Intensity"), 0.0, 100.0, 50.0, "%"),
+            ("softness", tl!("Softness"), 0.0, 100.0, 0.0, "%"),
+        ] {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                label(ui, name);
+                let v = light.get(key).and_then(Value::as_f64).unwrap_or(default);
+                if let Some(n) = widgets::range_field(ui, ("three-d-light", i, key), v, lo..=hi, suffix, 1, VALUE_W) {
+                    light[key] = json!(n);
+                    changed = true;
+                }
+            });
+        }
+    }
+    if let Some(i) = delete {
+        lights.remove(i);
+        changed = true;
+    }
+    if lights.len() < vectorcraft_three_d::MAX_EXTRA_LIGHTS && widgets::flat_button(ui, tl!("Add Light"), 110.0).clicked() {
+        lights.push(json!({"azimuth": 45.0, "elevation": 30.0, "intensity": 50.0, "color": "#ffffff", "softness": 0.0}));
+        changed = true;
+    }
+    if changed {
+        d.fields.insert("lights".into(), Value::Array(lights));
+    }
+}
+
+/// The graphics laid on the surface (`graphics`, up to eight): each a symbol of the document with
+/// its place across and down the object (round a Revolve, across is the way round), its scale,
+/// turn and finish, and a button to delete it; Add Graphic below (the first symbol, in the middle).
+fn graphics_controls(app: &VectorcraftApp, ui: &mut egui::Ui, d: &mut Dialog) {
+    let names: Vec<String> = app.session.active().map(|doc| doc.doc.symbols.iter().map(|s| s.name.clone()).collect()).unwrap_or_default();
+    let mut graphics: Vec<Value> = d.fields.get("graphics").and_then(Value::as_array).cloned().unwrap_or_default();
+    ui.add_space(8.0);
+    heading(ui, tl!("Graphics"));
+    if names.is_empty() && graphics.is_empty() {
+        let t = Tokens::get(ui.ctx());
+        ui.label(egui::RichText::new(tl!("Make a symbol to lay it on the surface.")).color(t.text_dim));
+        return;
+    }
+    let options: Vec<&str> = names.iter().map(String::as_str).collect();
+    let mut changed = false;
+    let mut delete = None;
+    for (i, g) in graphics.iter_mut().enumerate() {
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            let current = g.get("symbol").and_then(Value::as_str).unwrap_or_default().to_string();
+            let width = VALUE_W + rail_width(ui) + 6.0;
+            if let Some(k) = widgets::dropdown_names(ui, ("three-d-graphic", i), &current, &options, width)
+                && let Some(name) = options.get(k)
+            {
+                g["symbol"] = json!(name);
+                changed = true;
+            }
+            if widgets::icon_button(ui, "trash-2", tl!("Delete Graphic"), false, 22.0).clicked() {
+                delete = Some(i);
+            }
+        });
+        // Matte keeps a logo as printed; Surface takes the surface's gloss or metal.
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            label(ui, tl!("Finish"));
+            let surface = g.get("finish").and_then(Value::as_str) == Some("surface");
+            let current = if surface { c3("Surface") } else { c3("Matte") };
+            let width = VALUE_W + rail_width(ui) + 6.0;
+            if let Some(k) = widgets::dropdown(ui, ("three-d-graphic-finish", i), current, &[c3("Matte"), c3("Surface")], width) {
+                g["finish"] = json!(if k == 0 { "matte" } else { "surface" });
+                changed = true;
+            }
+        });
+        for (key, name, lo, hi, default, suffix) in [
+            ("x", tl!("Horizontal"), -100.0, 200.0, 50.0, "%"),
+            ("y", tl!("Vertical"), -100.0, 200.0, 50.0, "%"),
+            ("scale", tl!("Scale"), 1.0, 1000.0, 100.0, "%"),
+            ("rotation", tl!("Rotation"), -360.0, 360.0, 0.0, "°"),
+        ] {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                label(ui, name);
+                let v = g.get(key).and_then(Value::as_f64).unwrap_or(default);
+                if let Some(n) = widgets::range_field(ui, ("three-d-graphic", i, key), v, lo..=hi, suffix, 1, VALUE_W) {
+                    g[key] = json!(n);
+                    changed = true;
+                }
+            });
+        }
+    }
+    if let Some(i) = delete {
+        graphics.remove(i);
+        changed = true;
+    }
+    if let Some(first) = names.first()
+        && graphics.len() < vectorcraft_effects::graphics::MAX_GRAPHICS
+        && widgets::flat_button(ui, tl!("Add Graphic"), 110.0).clicked()
+    {
+        graphics.push(json!({"symbol": first, "x": 50.0, "y": 50.0, "scale": 100.0, "rotation": 0.0, "finish": "matte"}));
+        changed = true;
+    }
+    if changed {
+        d.fields.insert("graphics".into(), Value::Array(graphics));
+    }
 }
 
 fn heading(ui: &mut egui::Ui, text: &str) {

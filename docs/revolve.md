@@ -7,6 +7,20 @@ The profile's horizontal distance from a vertical axis is its radius. **Axis sid
 edge of the profile's bounds; **Offset** moves the axis outward. For a cylinder made from a vertical
 line, give it a nonzero offset. A vertical line at zero offset lies on the axis and has no surface.
 
+**Cap** (Solid for new effects) makes the result read as a solid: an open profile is closed against the axis,
+so where its ends turn they become flat discs (a tube gets a lid and a floor), and a partial turn's two cut ends
+are filled with the profile's shape (the profile closed against the axis, or a closed profile as it is).
+**Hollow** leaves a thin shell, open at its ends, as Revolve drew before it had the option; effects saved then
+stay hollow. Every closed ring of the profile goes into each cut end together, so a ring drawn inside another
+is a hole in it (whichever way round it was drawn): a pipe's cut ends are rings.
+
+**Graphics** (on the Material tab, as for the other 3D types in [three-d.md](three-d.md#materials)) wrap
+symbols round the surface like a label. **Horizontal** is the way round: 50 % is the front (the side facing you
+before the view turns), 0 % and 100 % the back, measured along the circle at the profile's widest radius, so at
+100 % scale the art keeps its size there and narrows where the profile comes nearer the axis. **Vertical** is
+down the profile's height. On a partial turn the art is clipped to the part that is turned. Art on the side
+facing away is hidden.
+
 **Revolve angle** sweeps 0 to 360 degrees. **Rotation X/Y/Z** rotates the viewing direction, with all three axes defaulting to 0 degrees. **Perspective**
 is zero for an orthographic view. **Segments** controls radial resolution (8 to 128 for a full turn).
 Lighting is a directional light with azimuth, elevation, intensity and ambient contribution.
@@ -58,14 +72,15 @@ its approximation for intersecting surfaces. Expansion changes are undoable with
 ## Initial limits
 
 - Paths and compound paths only. Type, images and groups must be converted to paths first.
-- Open profiles produce uncapped surfaces. Closed profile boundaries are swept as provided.
+- Closed profile boundaries are swept as provided. Cut ends fill the profile's rings together, rings inside
+  others as holes (see **Cap**).
 - One Revolve per source object. Edit its options rather than applying another.
 - Object-level Revolve uses the top visible fill, falling back to a stroke. Per-item Revolve uses that item's paint.
-- Flat shading, one directional light, no textures, cast shadows, end caps or physical materials.
+- Up to four coloured, soft-edged lights, a shadow below or behind, and our own materials (highlight, metallic, rim light, cel bands, smooth shading; see [three-d.md](three-d.md#materials)); no textures. Graphics wrap round the surface only, not
+  onto the lids or cut ends.
 - Faces use back-to-front depth sorting. Intersecting profiles can have incorrect visibility.
 - Curves use sixteen samples per segment; profiles are limited to 1,024 samples and surfaces to 32,768 faces.
 - Axis, bounds and ordinary selection handles continue to refer to the editable 2D source profile.
-- Extrude & Bevel, Inflate, Rotate and Materials remain unimplemented.
 
 ## Architecture
 

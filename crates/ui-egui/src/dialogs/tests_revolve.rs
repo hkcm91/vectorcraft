@@ -91,7 +91,7 @@ fn values_labels_sliders_and_reset_dots_change_the_live_effect_in_one_undo_step(
     h.settle();
     assert!(!h.rect("Advanced").is_negative(), "Advanced is visible without scrolling in a normal window");
     let panel = h.ctx.memory(|m| m.area_rect(Id::new(("dialog", "effect")).with("revolve"))).unwrap();
-    assert!(panel.width() < 420.0 && panel.height() < 540.0, "compact controls: {panel:?}");
+    assert!(panel.width() < 420.0 && panel.height() < 570.0, "compact controls: {panel:?}");
     let label = h.rect("Rotation X");
     h.drag(pos2(label.left() + LABEL_W + 6.0 + VALUE_W / 2.0, label.center().y), vec2(40.0, 0.0));
     assert!(h.value("rotationX") > 0.0, "the value itself drags");
@@ -156,7 +156,9 @@ fn lighting_tab_shows_light_fields_and_keeps_the_dialog_compact() {
         assert!(Rect::from_min_size(Pos2::ZERO, h.screen).contains_rect(h.rect(label)));
     }
     let panel = h.ctx.memory(|m| m.area_rect(Id::new(("dialog", "effect")).with("revolve"))).unwrap();
-    assert!(panel.width() < 420.0 && panel.height() < 460.0, "compact lighting controls: {panel:?}");
+    // Presets, Colour, Softness and Ambient Color add four rows; More Lights and Shadows stay
+    // folded until used.
+    assert!(panel.width() < 420.0 && panel.height() < 580.0, "compact lighting controls: {panel:?}");
     h.drag(h.rect("Direction").center(), vec2(24.0, 0.0));
     assert_ne!(h.value("lightAzimuth"), -45.0);
     h.click(h.response(("revolve-reset", "lightAzimuth")).center());
@@ -256,4 +258,162 @@ fn extrude_bevel_options_enable_with_a_bevel_shape() {
     h.settle();
     assert!(h.ctx.read_response(Id::new(("revolve-reset", "bevelWidth"))).unwrap().enabled());
     assert_eq!(h.response(("revolve-reset", "bevelWidth")), width);
+}
+
+#[test]
+fn lighting_tab_adds_lights_and_a_shadow_to_the_live_effect() {
+    let mut h = Harness::with("M100 100 L200 100 L200 200 L100 200 Z", vectorcraft_effects::EXTRUDE, vec2(1400.0, 1100.0));
+    h.settle();
+    let d = h.app.ui.dialog.as_mut().unwrap();
+    d.fields.insert("__gizmo".into(), json!("light"));
+    h.settle();
+    for label in ["Color", "Softness", "More Lights", "Shadows"] {
+        h.rect(label);
+    }
+    // Shadows opens on a click; a position enables its distance.
+    h.click(h.rect("Shadows").center());
+    h.rect("Position");
+    h.app.ui.dialog.as_mut().unwrap().fields.insert("shadow".into(), json!("below"));
+    h.settle();
+    h.rect("Distance");
+    // New shadows fall straight under the object, the choice shown beside Direction.
+    h.rect("Straight");
+    // More Lights opens on a click; Add Light adds one, shown as Light Source 2.
+    h.click(h.rect("More Lights").center());
+    h.click(h.rect("Add Light").center());
+    let lights = h.app.ui.dialog.as_ref().unwrap().fields.get("lights").and_then(Value::as_array).map_or(0, Vec::len);
+    assert_eq!(lights, 1, "Add Light adds a light");
+    h.rect("Light Source 2");
+    // The live preview draws the shadow first, under the faces.
+    let st = h.app.session.doc().unwrap();
+    let id = st.selection.objects[0];
+    let art = vectorcraft_effects::solid_art(st.doc.node(id).unwrap()).unwrap();
+    let first = &art.children().unwrap()[0];
+    assert!(first.appearance.effects.iter().any(|e| e.id == "blur.gaussian"), "a blurred shadow at the back");
+}
+
+#[test]
+fn material_tab_presets_set_the_material_and_lighting_presets_the_lights() {
+    let mut h = Harness::with("M100 100 L200 100 L200 200 L100 200 Z", vectorcraft_effects::EXTRUDE, vec2(1400.0, 1100.0));
+    h.settle();
+    h.click(h.rect("Material").center());
+    for label in ["Presets", "Highlight", "Roughness", "Metallic", "Reflections", "Rim Light", "Cel Bands", "Smooth shading", "Ambient Occlusion"] {
+        h.rect(label);
+    }
+    // The defaults are the Matte preset, shown by name.
+    h.rect("Matte");
+    let d = h.app.ui.dialog.as_mut().unwrap();
+    d.fields.extend(vectorcraft_effects::MATERIAL_PRESETS[4].params());
+    h.settle();
+    h.rect("Metal");
+    h.app.ui.dialog.as_mut().unwrap().fields.insert("roughness".into(), json!(12.5));
+    h.settle();
+    h.rect("Custom");
+    // The live preview takes the material.
+    let st = h.app.session.doc().unwrap();
+    let node = st.doc.node(st.selection.objects[0]).unwrap();
+    let e = node.appearance.effects.last().unwrap();
+    assert_eq!(e.params["metallic"], json!(100.0));
+    // Lighting presets: Studio sets two more lights; the tab then shows its name.
+    h.click(h.rect("Lighting").center());
+    h.rect("Standard");
+    let defaults = vectorcraft_effects::default_params(vectorcraft_effects::EXTRUDE).unwrap();
+    let studio = &vectorcraft_effects::LIGHTING_PRESETS[1];
+    h.app.ui.dialog.as_mut().unwrap().fields.extend(studio.params());
+    h.settle();
+    h.rect("Studio");
+    let d = h.app.ui.dialog.as_ref().unwrap();
+    assert!(studio.matches(&d.fields, &defaults));
+    assert_eq!(d.fields["lights"].as_array().map(Vec::len), Some(2));
+}
+
+#[test]
+fn dragging_a_value_previews_a_draft_and_letting_go_shades_it_in_full() {
+    let mut h = Harness::with("M100 100 L200 100 L200 200 L100 200 Z", vectorcraft_effects::INFLATE, vec2(1400.0, 1100.0));
+    h.settle();
+    h.click(h.rect("Rotation").center());
+    let live = |h: &Harness| {
+        let st = h.app.session.doc().unwrap();
+        st.doc.node(st.selection.objects[0]).unwrap().appearance.effects.last().unwrap().params.clone()
+    };
+    assert!(live(&h).get("draftPreview").is_none());
+    // Mid-drag on Rotation Y's label: the value moves and the preview is a draft.
+    let p = h.rect("Rotation Y").center();
+    h.frame(vec![Event::PointerMoved(p), button(p, true)]);
+    for i in 1..=4 {
+        h.frame(vec![Event::PointerMoved(p + vec2(10.0 * i as f32, 0.0))]);
+    }
+    assert_eq!(live(&h)["draftPreview"], json!(true), "while dragging");
+    let moved = live(&h)["rotationY"].clone();
+    // Let go: the same values, shaded in full.
+    h.frame(vec![button(p + vec2(40.0, 0.0), false)]);
+    h.settle();
+    let after = live(&h);
+    assert!(after.get("draftPreview").is_none(), "after letting go: {after}");
+    assert_eq!(after["rotationY"], moved);
+    // OK keeps the full effect.
+    h.click(h.rect("OK").center());
+    assert!(h.app.ui.dialog.is_none());
+    let st = h.app.session.doc().unwrap();
+    let kept = &st.doc.node(st.selection.objects[0]).unwrap().appearance.effects.last().unwrap().params;
+    assert!(kept.get("draftPreview").is_none());
+}
+
+#[test]
+fn material_tab_lays_a_symbol_on_the_surface() {
+    // Without symbols, the section says to make one.
+    let mut h = Harness::with("M100 100 L200 100 L200 200 L100 200 Z", vectorcraft_effects::INFLATE, vec2(1400.0, 1400.0));
+    h.settle();
+    h.click(h.rect("Material").center());
+    h.rect("Graphics");
+    h.rect("Make a symbol to lay it on the surface.");
+    // With one, Add Graphic lays it in the middle, with its place, scale and turn.
+    let mut app = VectorcraftApp::new(Session::new(), Default::default());
+    app.run("file.new", json!({"width":300,"height":300})).unwrap();
+    app.run("shape.rectangle", json!({"x":10,"y":10,"width":20,"height":20})).unwrap();
+    app.run("symbol.new", json!({"name":"Badge"})).unwrap();
+    app.run("path.create", json!({"d": "M100 100 L200 100 L200 200 L100 200 Z"})).unwrap();
+    app.run("paint.setFill", json!({"color":"#338ad6"})).unwrap();
+    app.run("effect.dialog", json!({"effect":vectorcraft_effects::INFLATE,"item":null})).unwrap();
+    h.app = app;
+    h.settle();
+    h.click(h.rect("Material").center());
+    // The section is at the bottom of the tab: scroll down to it.
+    let over = h.rect("Graphics").center();
+    let wheel =
+        Event::MouseWheel { unit: egui::MouseWheelUnit::Line, delta: vec2(0.0, -20.0), phase: egui::TouchPhase::Move, modifiers: Default::default() };
+    h.frame(vec![Event::PointerMoved(over), wheel.clone()]);
+    h.settle();
+    h.click(h.rect("Add Graphic").center());
+    let graphics = h.app.ui.dialog.as_ref().unwrap().fields.get("graphics").and_then(Value::as_array).cloned().unwrap_or_default();
+    assert_eq!(graphics, vec![json!({"symbol": "Badge", "x": 50.0, "y": 50.0, "scale": 100.0, "rotation": 0.0, "finish": "matte"})]);
+    let over = h.rect("Graphics").center();
+    h.frame(vec![Event::PointerMoved(over), wheel.clone()]);
+    h.settle();
+    for label in ["Badge", "Finish", "Matte", "Horizontal", "Vertical", "Scale", "Rotation"] {
+        h.rect(label);
+    }
+    // The live preview takes it.
+    let st = h.app.session.doc().unwrap();
+    let node = st.doc.node(st.selection.objects[0]).unwrap();
+    assert_eq!(node.appearance.effects.last().unwrap().params["graphics"][0]["symbol"], json!("Badge"));
+}
+
+#[test]
+fn revolve_and_rotate_material_tabs_offer_graphics() {
+    for effect in [REVOLVE, vectorcraft_effects::ROTATE] {
+        let mut h = Harness::with("M150 40 L180 60 L180 140 L150 160", effect, vec2(1400.0, 1400.0));
+        h.settle();
+        h.click(h.rect("Material").center());
+        let over = h.rect("Ambient Occlusion").center();
+        let wheel = Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: vec2(0.0, -20.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Default::default(),
+        };
+        h.frame(vec![Event::PointerMoved(over), wheel]);
+        h.settle();
+        h.rect("Graphics");
+    }
 }

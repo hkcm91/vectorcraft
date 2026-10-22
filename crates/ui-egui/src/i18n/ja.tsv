@@ -4289,9 +4289,15 @@ lighting	Light	ライト
 	Taper	テーパー
 	Twist	ねじれ
 	Volume	ボリューム
+	Pillow	クッション
+	Layer Depths	レイヤーの奥行き
+	Layer {n} (bottom)	レイヤー {n}（最下）
+	Layer {n}	レイヤー {n}
+	Use Depth for All	すべてに奥行きを適用
 3d	Cap	キャップ
 3d	Solid	ソリッド
 3d	Hollow	中空
+3d	Surface	表面
 3d	Bevel	ベベル
 3d	Rounded	丸み
 3d	Space	間隔
@@ -4310,3 +4316,89 @@ lighting	Light	ライト
 @msg	unknown parameter `{key}`; the command takes: {keys}	`{key}` は不明なパラメーターです。このコマンドで使えるパラメーター: {keys}
 	Load EPS into Clipboard	EPS をクリップボードに読み込む
 @msg	an image of {w} × {h} pixels is too large to draw	{w} × {h} ピクセルの画像は大きすぎて描画できません
+# Arch tool and its options (a VectorCraft addition).
+	Arch	アーチ
+	Arch Tool	アーチツール
+	Arch Tool Options	アーチツールオプション
+	Arch Count:	アーチの数:
+	Thickness:	太さ:
+	Segments:	分割数:
+	Close into Rings	リングにする
+	Color Palette	カラーパレット
+	Add Color	カラーを追加
+	Remove Color	カラーを削除
+	Shuffle Colors	カラーをシャッフル
+	Fill Style	塗りのスタイル
+	Wide	ワイド
+	Pointed	尖頭
+	Scallop	スカラップ
+	Wavy	波形
+	Segmented	分割
+	Flat	フラット
+	Glossy	光沢
+	Jelly	ゼリー
+	Muted	くすみ
+	Pearlescent	パール
+	Classic Rainbow	クラシックレインボー
+	Candy Arch	キャンディアーチ
+	Double Arch	ダブルアーチ
+	Scallop Gate	スカラップゲート
+	Dream Tunnel	ドリームトンネル
+	Wavy Arch	ウェーブアーチ
+# Dimension tool and its options.
+	Dimension	寸法
+	Dimension Tool	寸法ツール
+	Dimension Tool Options	寸法ツールオプション
+	Linear	直線
+	Angular	角度
+	Aligned	平行
+	Precision:	精度:
+	Ends:	端点:
+	Arrow	矢印
+	Tick	目盛り
+	Dot	点
+	Line Weight:	線幅:
+	Font Size:	フォントサイズ:
+	Show Units	単位を表示
+# 3D lighting and shadows.
+	Light Source	光源
+	Softness	柔らかさ
+	Shadows	シャドウ
+	Below Object	オブジェクトの下
+	Behind Object	オブジェクトの背後
+	Distance	距離
+	Delete Light	ライトを削除
+	Add Light	ライトを追加
+	Add Graphic	グラフィックを追加
+	Finish	仕上げ
+	Delete Graphic	グラフィックを削除
+	Make a symbol to lay it on the surface.	シンボルを作成すると、表面に配置できます。
+	More Lights	その他のライト
+# 3D materials and lighting presets.
+	Material	マテリアル
+	Highlight	ハイライト
+	Roughness	粗さ
+	Metallic	メタリック
+	Rim Light	リムライト
+	Cel Bands	セルの階調
+	Reflections	映り込み
+	Outdoor	屋外
+	Sunset	夕焼け
+	Ambient Occlusion	アンビエントオクルージョン
+	Contact Shadow	接地影
+	Straight	垂直
+	From Light	光源から
+	Smooth shading	スムーズシェーディング
+	Ambient Color	環境光の色
+	Soft Touch	ソフトタッチ
+	Plastic	プラスチック
+	Metal	メタル
+	Chrome	クローム
+	Rim Glow	リムグロー
+	Toon	トゥーン
+	Standard	標準
+	Studio	スタジオ
+	Top Light	トップライト
+	Dramatic	ドラマチック
+	Warm & Cool	暖色と寒色
+3d	Matte	マット

@@ -3883,9 +3883,15 @@ lighting	Light	光源
 	Taper	锥化
 	Twist	扭转
 	Volume	体积
+	Pillow	软垫
+	Layer Depths	图层深度
+	Layer {n} (bottom)	图层 {n}（底层）
+	Layer {n}	图层 {n}
+	Use Depth for All	全部使用深度
 3d	Cap	封口
 3d	Solid	实心
 3d	Hollow	空心
+3d	Surface	表面
 3d	Bevel	斜角
 3d	Rounded	圆角
 3d	Space	间距
@@ -3904,3 +3910,88 @@ lighting	Light	光源
 @msg	unknown parameter `{key}`; the command takes: {keys}	未知参数 `{key}`；该命令接受：{keys}
 	Load EPS into Clipboard	将 EPS 载入剪贴板
 @msg	an image of {w} × {h} pixels is too large to draw	{w} × {h} 像素的图像过大，无法绘制
+# Arch tool and its options (a VectorCraft addition).
+	Arch	拱形
+	Arch Tool	拱形工具
+	Arch Tool Options	拱形工具选项
+	Arch Count:	拱形数量：
+	Thickness:	粗细：
+	Segments:	分段数：
+	Close into Rings	闭合为圆环
+	Color Palette	调色板
+	Add Color	添加颜色
+	Remove Color	移除颜色
+	Shuffle Colors	随机排列颜色
+	Fill Style	填充样式
+	Wide	宽
+	Pointed	尖拱
+	Scallop	扇贝
+	Wavy	波浪
+	Segmented	分段
+	Flat	平面
+	Glossy	光泽
+	Jelly	果冻
+	Pearlescent	珍珠
+	Classic Rainbow	经典彩虹
+	Candy Arch	糖果拱形
+	Double Arch	双拱形
+	Scallop Gate	扇贝拱门
+	Dream Tunnel	梦幻隧道
+	Wavy Arch	波浪拱形
+# Dimension tool and its options.
+	Dimension	尺寸标注
+	Dimension Tool	尺寸标注工具
+	Dimension Tool Options	尺寸标注工具选项
+	Linear	线性
+	Angular	角度
+	Aligned	对齐
+	Precision:	精度：
+	Ends:	端点：
+	Arrow	箭头
+	Tick	刻痕
+	Dot	圆点
+	Line Weight:	线条粗细：
+	Font Size:	字体大小：
+	Show Units	显示单位
+# 3D lighting and shadows.
+	Light Source	光源
+	Softness	柔和度
+	Shadows	阴影
+	Below Object	对象下方
+	Behind Object	对象后方
+	Distance	距离
+	Delete Light	删除光源
+	Add Light	添加光源
+	Add Graphic	添加图形
+	Finish	饰面
+	Delete Graphic	删除图形
+	Make a symbol to lay it on the surface.	创建符号后即可将其放到表面上。
+	More Lights	更多光源
+# 3D materials and lighting presets.
+	Material	材质
+	Highlight	高光
+	Roughness	粗糙度
+	Metallic	金属感
+	Rim Light	轮廓光
+	Cel Bands	色阶数
+	Reflections	反射
+	Outdoor	户外
+	Sunset	日落
+	Ambient Occlusion	环境光遮蔽
+	Contact Shadow	接触阴影
+	Straight	垂直
+	From Light	来自光源
+	Smooth shading	平滑着色
+	Ambient Color	环境光颜色
+	Soft Touch	柔触
+	Plastic	塑料
+	Metal	金属
+	Chrome	铬
+	Rim Glow	轮廓光晕
+	Toon	卡通
+	Standard	标准
+	Studio	摄影棚
+	Top Light	顶光
+	Dramatic	戏剧性
+	Warm & Cool	冷暖光
+3d	Matte	哑光

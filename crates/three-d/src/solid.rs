@@ -11,9 +11,12 @@
 
 use vectorcraft_geom::{BezPath, ParamCurve, PathData, Point, Rect};
 
-use crate::{MAX_FACES, Revolve, V3};
+use crate::lighting::{self, Light, MAX_EXTRA_LIGHTS, Material, Shade, ShadowDirection, ShadowPosition};
+use crate::raster::{Poly, Shading};
+use crate::smooth::{self, Source};
+use crate::{MAX_FACES, Revolve, V3, mean};
 
-/// The view shared by every 3D effect: rotation, perspective and one directional light.
+/// The view shared by every 3D effect: rotation, perspective, the lights and the shadow.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct View {
     pub rotation_x: f64,
@@ -26,6 +29,18 @@ pub struct View {
     pub light_intensity: f64,
     pub ambient: f64,
     pub shade: bool,
+    /// The main light's colour (linear 0–1 RGB) and softness (0–1).
+    pub light_color: [f64; 3],
+    pub light_softness: f64,
+    /// More lights: the first `extra_count` of `extra_lights`.
+    pub extra_lights: [Light; MAX_EXTRA_LIGHTS],
+    pub extra_count: usize,
+    /// Where the object casts its shadow, how far beyond it (points) and which way.
+    pub shadow: ShadowPosition,
+    pub shadow_distance: f64,
+    pub shadow_direction: ShadowDirection,
+    /// How the surface takes the light.
+    pub material: Material,
 }
 
 impl Default for View {
@@ -41,6 +56,14 @@ impl Default for View {
             light_intensity: r.light_intensity,
             ambient: r.ambient,
             shade: r.shade,
+            light_color: r.light_color,
+            light_softness: r.light_softness,
+            extra_lights: r.extra_lights,
+            extra_count: r.extra_count,
+            shadow: r.shadow,
+            shadow_distance: r.shadow_distance,
+            shadow_direction: r.shadow_direction,
+            material: r.material,
         }
     }
 }
@@ -58,6 +81,14 @@ impl View {
             light_intensity: self.light_intensity,
             ambient: self.ambient,
             shade: self.shade,
+            light_color: self.light_color,
+            light_softness: self.light_softness,
+            extra_lights: self.extra_lights,
+            extra_count: self.extra_count,
+            shadow: self.shadow,
+            shadow_distance: self.shadow_distance,
+            shadow_direction: self.shadow_direction,
+            material: self.material,
             ..Revolve::default()
         }
         .sanitized()
@@ -183,6 +214,9 @@ pub struct Inflate {
     pub depth: f64,
     /// How far the surface puffs out (0..100 %; 50 % rounds it like a half sphere).
     pub volume: f64,
+    /// How soft the puff is (0..100 %): 0 % a dome whose edge rises straight up, 100 % a pillow,
+    /// its edge a seam it rises from at an angle, its top plump and level, its corners pinched.
+    pub pillow: f64,
     /// Puff the back out too; otherwise it stays flat.
     pub both_sides: bool,
     /// The turn of the back against the front, about the shape's centre: 0° to 360°.
@@ -191,20 +225,118 @@ pub struct Inflate {
     pub taper: f64,
     /// A closed back (a solid) or none, so the inflated front is a shell open behind.
     pub cap: bool,
+    /// A quick draft (a live preview being dragged): the surface on a grid half as fine.
+    pub draft: bool,
 }
 
 impl Default for Inflate {
     fn default() -> Self {
-        Self { depth: 0.0, volume: 50.0, both_sides: false, twist: 0.0, taper: 1.0, cap: true }
+        Self { depth: 0.0, volume: 50.0, pillow: 0.0, both_sides: false, twist: 0.0, taper: 1.0, cap: true, draft: false }
     }
 }
 
 /// One projected, flat-shaded polygon. Holes are contours of their own (nonzero winding).
+/// `tint` multiplies the paint channel by channel and `highlight` is added on top; `brightness`
+/// is the tint's mean, at most 1.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Facet {
     pub contours: Vec<Vec<Point>>,
     pub depth: f64,
     pub brightness: f64,
+    pub tint: [f64; 3],
+    pub highlight: [f64; 3],
+}
+
+/// A solid's facets, back to front, and the shadow it casts (an outline to fill), if any. With
+/// smooth shading, `shading` draws the surface pixel by pixel (the facets' shades are then their
+/// means, for paints that aren't a flat colour).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Shaded {
+    pub facets: Vec<Facet>,
+    pub shadow: Option<PathData>,
+    pub shading: Option<Shading>,
+    /// The contact shadow where the solid meets the shadow's plane, and how strongly it shows.
+    pub contact: Option<(PathData, f64)>,
+    /// The art laid on the front surface ([`extrude_mapped`], [`inflate_mapped`],
+    /// [`plane_mapped`]), piece by piece.
+    pub mapped: Vec<Mapped>,
+}
+
+/// A piece of art laid on a solid's front surface.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Mapped {
+    /// Its rings on the surface, projected: none where the surface under it faces away.
+    pub contours: Vec<Vec<Point>>,
+    /// How the surface under its centre is lit, in its own material and on a matte finish.
+    pub shade: Shade,
+    pub matte: Shade,
+}
+
+/// Mapped art's points in all, at most: more pieces are left off.
+const MAX_MAPPED_POINTS: usize = 200_000;
+
+/// `art` (pieces of rings, in the art's coordinates) laid on a surface and projected. `place`
+/// gives a point's place on the surface and the surface's outward normal there (view space).
+/// Edges are cut to at most `size / 96` so the art bends with a curved surface and perspective.
+fn map_art(art: &[Vec<Vec<Point>>], size: f64, camera: &Camera, place: impl Fn(Point) -> (V3, V3)) -> Result<Vec<Mapped>, String> {
+    map_with(art, size, &camera.rig, &|q| camera.project(q), &|at, n| camera.facing(at, n), place)
+}
+
+/// [`map_art`] with the projection, the facing test and the lights given (Revolve has no
+/// [`Camera`]).
+pub(crate) fn map_with(
+    art: &[Vec<Vec<Point>>],
+    size: f64,
+    rig: &lighting::Rig,
+    project: &dyn Fn(V3) -> Point,
+    facing: &dyn Fn(V3, V3) -> f64,
+    place: impl Fn(Point) -> (V3, V3),
+) -> Result<Vec<Mapped>, String> {
+    let matte = rig.matte();
+    let longest = (size / 96.0).max(0.01);
+    let mut total = 0;
+    let mut out = Vec::with_capacity(art.len());
+    for piece in art {
+        let count: usize = piece.iter().map(Vec::len).sum();
+        if count == 0 {
+            out.push(Mapped::default());
+            continue;
+        }
+        let mean = piece.iter().flatten().fold((0.0, 0.0), |(x, y), p| (x + p.x, y + p.y));
+        let centre = Point::new(mean.0 / count as f64, mean.1 / count as f64);
+        if !centre.x.is_finite() || !centre.y.is_finite() {
+            return Err("The art laid on the 3D surface contains invalid coordinates".into());
+        }
+        let (at, normal) = place(centre);
+        // Faces away, or seen exactly edge-on (not a number): hidden.
+        if facing(at, normal).partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+            out.push(Mapped { contours: vec![], shade: rig.shade(normal), matte: matte.shade(normal) });
+            continue;
+        }
+        let mut contours = Vec::with_capacity(piece.len());
+        for ring in piece {
+            let mut projected = Vec::with_capacity(ring.len());
+            for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)).take(ring.len()) {
+                let cuts = (a.distance(*b) / longest).ceil();
+                let cuts = if cuts.is_finite() { (cuts as usize).clamp(1, 4096) } else { 1 };
+                total += cuts;
+                if total > MAX_MAPPED_POINTS {
+                    return Ok(out);
+                }
+                for k in 0..cuts {
+                    let p = a.lerp(*b, k as f64 / cuts as f64);
+                    let q = project(place(p).0);
+                    if !q.x.is_finite() || !q.y.is_finite() {
+                        return Err("The 3D projection is not finite".into());
+                    }
+                    projected.push(q);
+                }
+            }
+            contours.push(projected);
+        }
+        out.push(Mapped { contours, shade: rig.shade(normal), matte: matte.shade(normal) });
+    }
+    Ok(out)
 }
 
 impl Facet {
@@ -258,6 +390,7 @@ impl Inflate {
         Self {
             depth: finite(self.depth, 0.0, 0.0, 2000.0),
             volume: finite(self.volume, 50.0, 0.0, 100.0),
+            pillow: finite(self.pillow, 0.0, 0.0, 100.0),
             twist: finite(self.twist, 0.0, 0.0, 360.0),
             taper: finite(self.taper, 1.0, 0.01, 1.0),
             ..self
@@ -270,14 +403,16 @@ impl Inflate {
 const MAX_SOLID_POINTS: usize = 2048;
 /// Outline points Rotate samples at most: it only turns the outline, so an outlined paragraph fits.
 const MAX_PLANE_POINTS: usize = 65536;
+/// The most pieces one curve of the finely flattened outline Inflate's normals follow is cut into.
+const FINE_PIECES: u32 = 512;
 
 /// How many straight pieces follow `c` within `tolerance` (Wang's bound on a cubic's distance from
-/// its chords), 1 to 32.
-fn pieces(c: vectorcraft_geom::CubicBez, tolerance: f64) -> u32 {
+/// its chords), 1 to `most`.
+fn pieces(c: vectorcraft_geom::CubicBez, tolerance: f64, most: u32) -> u32 {
     let d = |a: Point, b: Point, c: Point| (a.to_vec2() - 2.0 * b.to_vec2() + c.to_vec2()).hypot();
     let bend = d(c.p0, c.p1, c.p2).max(d(c.p1, c.p2, c.p3));
     let n = (0.75 * bend / tolerance).sqrt().ceil();
-    if n.is_finite() { (n as u32).clamp(1, 32) } else { 32 }
+    if n.is_finite() { (n as u32).clamp(1, most) } else { most }
 }
 
 /// The rings of a shape: closed polygons with the filled side on their left, (-dy, dx): outer
@@ -285,7 +420,11 @@ fn pieces(c: vectorcraft_geom::CubicBez, tolerance: f64) -> u32 {
 /// are followed within a tolerance of 1/2000 of `size` (at least 0.05 pt), so small curves take
 /// few points and large ones more; more than `limit` points in all is refused.
 fn rings(path: &PathData, size: f64, limit: usize) -> Result<Vec<Vec<Point>>, String> {
-    let tolerance = (size / 2000.0).max(0.05);
+    rings_within(path, (size / 2000.0).max(0.05), 32, limit)
+}
+
+/// [`rings`], curves flattened to within `tolerance`, each in at most `most` pieces.
+fn rings_within(path: &PathData, tolerance: f64, most: u32, limit: usize) -> Result<Vec<Vec<Point>>, String> {
     let mut count = 0;
     let mut out = vec![];
     for sp in &path.subpaths {
@@ -299,7 +438,7 @@ fn rings(path: &PathData, size: f64, limit: usize) -> Result<Vec<Vec<Point>>, St
         }
         for i in 0..segments {
             let curve = sp.segment(i);
-            let samples = if sp.segment_is_line(i) { 1 } else { pieces(curve, tolerance) };
+            let samples = if sp.segment_is_line(i) { 1 } else { pieces(curve, tolerance, most) };
             count += samples as usize;
             if count > limit {
                 return Err("The shape is too complex for a 3D effect".into());
@@ -391,6 +530,7 @@ struct Camera {
     origin: Point,
     distance: f64,
     light: V3,
+    rig: lighting::Rig,
 }
 
 impl Camera {
@@ -398,7 +538,7 @@ impl Camera {
         let view = view.revolve();
         let [lx, ly, lz] = view.light_direction();
         let size = (bounds.width() / 2.0).max(bounds.height() / 2.0).max(depth / 2.0).max(1.0);
-        Self { view, origin: bounds.center(), distance: 4.0 * size, light: V3(lx, ly, lz) }
+        Self { view, origin: bounds.center(), distance: 4.0 * size, light: V3(lx, ly, lz), rig: view.rig() }
     }
     fn rotate(&self, v: V3) -> V3 {
         self.view.rotate(v)
@@ -417,10 +557,14 @@ impl Camera {
         let to_eye = if self.view.perspective > 0.0 { V3(0.0, 0.0, self.distance / self.view.perspective).sub(at).unit() } else { V3(0.0, 0.0, 1.0) };
         n.dot(to_eye)
     }
-    fn brightness(&self, n: V3) -> f64 {
-        if self.view.shade { (self.view.ambient + self.view.light_intensity * n.dot(self.light).max(0.0)).clamp(0.0, 1.0) } else { 1.0 }
+    fn shade(&self, n: V3) -> Shade {
+        self.rig.shade(n)
     }
 }
+
+/// A face to shade smoothly: its view-space contours, its normal, and its exact vertex normals if
+/// known.
+type SmoothFace = (Vec<Vec<V3>>, V3, Option<Vec<V3>>);
 
 /// Facets being collected for one solid.
 struct Builder<'a> {
@@ -429,11 +573,23 @@ struct Builder<'a> {
     /// insides.
     closed: bool,
     facets: Vec<Facet>,
+    /// Every face's contours (view space) when a shadow is wanted, front-facing or not.
+    casters: Vec<Vec<Vec<V3>>>,
+    /// With smooth shading, each facet's view-space contours, shading normal and exact vertex
+    /// normals if known, and the hidden faces (contours, outward normal).
+    smooth: Vec<SmoothFace>,
+    hidden: Vec<(Vec<Vec<V3>>, V3)>,
 }
 
 impl Builder<'_> {
     /// Add a face of view-space contours with outward normal `n` (view space).
     fn face(&mut self, contours: Vec<Vec<V3>>, n: V3) -> Result<(), String> {
+        self.face_with(contours, n, None)
+    }
+
+    /// [`Self::face`], with the surface's exact outward normal at each vertex (view space, in
+    /// the contours' order) for smooth shading.
+    fn face_with(&mut self, contours: Vec<Vec<V3>>, n: V3, given: Option<Vec<V3>>) -> Result<(), String> {
         let count: usize = contours.iter().map(Vec::len).sum();
         if count < 3 {
             return Ok(());
@@ -441,28 +597,39 @@ impl Builder<'_> {
         let centre = contours.iter().flatten().fold(V3::default(), |s, v| V3(s.0 + v.0, s.1 + v.1, s.2 + v.2));
         let centre = V3(centre.0 / count as f64, centre.1 / count as f64, centre.2 / count as f64);
         let n = n.unit();
+        if self.camera.view.shadow != ShadowPosition::None {
+            self.casters.push(contours.clone());
+        }
         let facing = self.camera.facing(centre, n);
         // A closed solid hides the faces turned away. One seen almost exactly edge-on is kept but
         // drawn first, under everything: on a curved surface rounding alone turns such faces
         // either way, and dropping every other one would leave gaps.
-        let (n, behind) = if facing > 0.0 {
-            (n, false)
+        let (n, behind, given) = if facing > 0.0 {
+            (n, false, given)
         } else if self.closed && facing > -0.02 {
-            (n, true)
+            (n, true, given)
         } else if self.closed {
+            if self.camera.rig.smooth() {
+                self.hidden.push((contours, n));
+            }
             return Ok(());
         } else {
-            (V3(-n.0, -n.1, -n.2), false)
+            // The inside of an open surface, seen from behind.
+            (V3(-n.0, -n.1, -n.2), false, given.map(|g| g.into_iter().map(|v| V3(-v.0, -v.1, -v.2)).collect()))
         };
-        let contours: Vec<Vec<Point>> = contours.iter().map(|c| c.iter().map(|v| self.camera.project(*v)).collect()).collect();
-        if contours.iter().flatten().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
+        let projected: Vec<Vec<Point>> = contours.iter().map(|c| c.iter().map(|v| self.camera.project(*v)).collect()).collect();
+        if projected.iter().flatten().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
             return Err("The 3D projection is not finite".into());
         }
-        if contours.iter().map(|c| signed_area(c).abs()).sum::<f64>() < 1e-10 {
+        if projected.iter().map(|c| signed_area(c).abs()).sum::<f64>() < 1e-10 {
             return Ok(());
         }
         let depth = if behind { centre.2 - 4.0 * self.camera.distance } else { centre.2 };
-        self.facets.push(Facet { contours, depth, brightness: self.camera.brightness(n) });
+        let shade = self.camera.shade(n);
+        if self.camera.rig.smooth() {
+            self.smooth.push((contours, n, given));
+        }
+        self.facets.push(Facet { contours: projected, depth, brightness: mean(shade.tint).min(1.0), tint: shade.tint, highlight: shade.highlight });
         if self.facets.len() > MAX_FACES {
             return Err("The 3D surface is too complex; simplify the shape".into());
         }
@@ -490,15 +657,41 @@ impl Builder<'_> {
         Ok(())
     }
 
-    fn finish(mut self) -> Vec<Facet> {
+    fn finish(mut self) -> Shaded {
+        let camera = self.camera;
+        let mut shading = None;
+        if camera.rig.smooth() && self.smooth.len() == self.facets.len() {
+            // The lights and the eye: six half extents from the centre.
+            let reach = 1.5 * camera.distance;
+            let sources: Vec<Source> =
+                self.smooth.iter().map(|(contours, normal, given)| Source { contours, normal: *normal, given: given.as_deref() }).collect();
+            if let Some(smoothed) = smooth::shade(&sources, &self.hidden, &camera.rig, reach) {
+                let mut polys = Vec::with_capacity(smoothed.len());
+                for ((f, (contours, normal, _)), s) in self.facets.iter_mut().zip(&self.smooth).zip(smoothed) {
+                    f.tint = s.shade.tint;
+                    f.highlight = s.shade.highlight;
+                    f.brightness = mean(s.shade.tint).min(1.0);
+                    polys.push(Poly {
+                        projected: f.contours.clone(),
+                        normals: s.normals,
+                        positions: contours.iter().flatten().copied().collect(),
+                        normal: *normal,
+                    });
+                }
+                shading = Some(Shading::new(camera.rig.clone(), reach, polys));
+            }
+        }
         self.facets.sort_by(|a, b| a.depth.total_cmp(&b.depth));
-        self.facets
+        let view = &camera.view;
+        let shadow = lighting::cast(&self.casters, camera.light, view.shadow_direction, view.shadow, view.shadow_distance, |v| camera.project(v));
+        let contact = lighting::contact(&self.casters, camera.view.shadow, camera.view.shadow_distance, |v| camera.project(v));
+        Shaded { facets: self.facets, shadow, shading, contact, mapped: vec![] }
     }
 }
 
 /// The area-weighted normal of (possibly non-planar) contours, by Newell's method: for contours
 /// winding with their filled side on the left as seen from in front, it points to the front.
-fn newell(contours: &[Vec<V3>]) -> V3 {
+pub(crate) fn newell(contours: &[Vec<V3>]) -> V3 {
     let mut n = V3::default();
     for c in contours {
         for (a, b) in c.iter().zip(c.iter().cycle().skip(1)).take(c.len()) {
@@ -626,17 +819,71 @@ fn steps(o: &Extrude) -> Vec<Step> {
 /// Extrude & Bevel: the shape's outline extruded backwards, with optional twist, taper, bevels
 /// and caps.
 pub fn extrude(path: &PathData, bounds: Rect, options: Extrude, view: View) -> Result<Vec<Facet>, String> {
+    extrude_lit(path, bounds, options, view).map(|s| s.facets)
+}
+
+/// [`extrude`], with the shadow the solid casts.
+pub fn extrude_lit(path: &PathData, bounds: Rect, options: Extrude, view: View) -> Result<Shaded, String> {
+    extrude_mapped(path, bounds, options, view, &[])
+}
+
+/// [`extrude_lit`], with `art` (pieces of rings in the art's coordinates) laid on the front.
+pub fn extrude_mapped(path: &PathData, bounds: Rect, options: Extrude, view: View, art: &[Vec<Vec<Point>>]) -> Result<Shaded, String> {
     check_bounds(bounds)?;
     let o = options.sanitized();
     // No depth: the flat shape, seen from either side.
     if o.depth <= 0.0 {
-        return plane(path, bounds, view);
+        return plane_mapped(path, bounds, view, art);
     }
+    build_extrude(path, bounds, o, view, art, o.depth / 2.0, o.depth)
+}
+
+/// Extrude & Bevel on nested layers (bottom first), each extruded and standing on the front of the
+/// one below it, like cut-outs stacked on each other. Layer k is `depths[k]` deep (0..2,000 pt;
+/// without an entry, the options' depth): the stack is their sum deep, centred on the art's plane,
+/// and turns as one about the centre of `bounds` (all the layers'). Each layer has its own bevel
+/// (no deeper than the layer), twist and taper; `art` goes on the top layer's front. One
+/// [`Shaded`] per layer, bottom first, to be drawn in that order.
+pub fn extrude_stack(
+    layers: &[PathData],
+    bounds: Rect,
+    options: Extrude,
+    view: View,
+    art: &[Vec<Vec<Point>>],
+    depths: &[f64],
+) -> Result<Vec<Shaded>, String> {
+    check_bounds(bounds)?;
+    if layers.len() > MAX_LAYERS {
+        return Err(format!("Extrude & Bevel takes at most {MAX_LAYERS} layers"));
+    }
+    let o = options.sanitized();
+    let depth = |k: usize| depths.get(k).copied().filter(|d| d.is_finite()).map_or(o.depth, |d| d.clamp(0.0, 2000.0));
+    let top = layers.len().saturating_sub(1);
+    let art_on = |k: usize| if k == top { art } else { &[] };
+    if (0..layers.len()).all(|k| depth(k) <= 0.0) {
+        return layers.iter().enumerate().map(|(k, p)| plane_mapped(p, bounds, view, art_on(k))).collect();
+    }
+    // A layer of no depth among deeper ones is a thin sheet at its place in the stack.
+    let depth = |k: usize| depth(k).max(0.01);
+    let extent: f64 = (0..layers.len()).map(depth).sum();
+    let mut front = -extent / 2.0;
+    let mut out = Vec::with_capacity(layers.len());
+    for (k, path) in layers.iter().enumerate() {
+        let d = depth(k);
+        front += d;
+        out.push(build_extrude(path, bounds, Extrude { depth: d, ..options }.sanitized(), view, art_on(k), front, extent)?);
+    }
+    Ok(out)
+}
+
+/// Extrude & Bevel's solid for `path`, its front `front` points ahead of the art's plane, in a
+/// view framed for `extent` points of depth.
+fn build_extrude(path: &PathData, bounds: Rect, o: Extrude, view: View, art: &[Vec<Vec<Point>>], front: f64, extent: f64) -> Result<Shaded, String> {
     let rings = rings(path, bounds.width().max(bounds.height()), MAX_SOLID_POINTS)?;
-    let camera = Camera::new(view, bounds, o.depth);
-    let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![] };
+    let camera = Camera::new(view, bounds, extent);
+    let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![], casters: vec![], smooth: vec![], hidden: vec![] };
     let steps = steps(&o);
-    let z = |t: f64| o.depth / 2.0 - o.depth * t;
+    let z = |t: f64| front - o.depth * t;
     let ring_at =
         |ring: &[Point], s: &Step| -> Vec<V3> { section(&inset(ring, s.inset), bounds, &o, s.t).iter().map(|p| camera.place(*p, z(s.t))).collect() };
     for ring in &rings {
@@ -661,19 +908,33 @@ pub fn extrude(path: &PathData, bounds: Rect, options: Extrude, view: View) -> R
             b.face(rings.iter().map(|r| ring_at(r, s)).collect(), camera.rotate(V3(0.0, 0.0, n)))?;
         }
     }
-    Ok(b.finish())
+    let front = camera.rotate(V3(0.0, 0.0, 1.0));
+    let mapped = map_art(art, bounds.width().max(bounds.height()), &camera, |p| (camera.place(p, z(0.0)), front))?;
+    Ok(Shaded { mapped, ..b.finish() })
 }
 
 /// Rotate: the flat art turned in 3D about the centre of `bounds` (which may be larger than the
 /// shape's own, so that every part of one object turns about the same point).
 pub fn plane(path: &PathData, bounds: Rect, view: View) -> Result<Vec<Facet>, String> {
+    plane_lit(path, bounds, view).map(|s| s.facets)
+}
+
+/// [`plane`], with the shadow the turned art casts.
+pub fn plane_lit(path: &PathData, bounds: Rect, view: View) -> Result<Shaded, String> {
+    plane_mapped(path, bounds, view, &[])
+}
+
+/// [`plane_lit`], with `art` (pieces of rings in the art's coordinates) laid on the art's front.
+pub fn plane_mapped(path: &PathData, bounds: Rect, view: View, art: &[Vec<Vec<Point>>]) -> Result<Shaded, String> {
     check_bounds(bounds)?;
     let rings = rings(path, bounds.width().max(bounds.height()), MAX_PLANE_POINTS)?;
     let camera = Camera::new(view, bounds, 0.0);
-    let mut b = Builder { camera: &camera, closed: false, facets: vec![] };
+    let mut b = Builder { camera: &camera, closed: false, facets: vec![], casters: vec![], smooth: vec![], hidden: vec![] };
     let contours: Vec<Vec<V3>> = rings.iter().map(|r| r.iter().map(|p| camera.place(*p, 0.0)).collect()).collect();
-    b.face(contours, camera.rotate(V3(0.0, 0.0, 1.0)))?;
-    Ok(b.finish())
+    let front = camera.rotate(V3(0.0, 0.0, 1.0));
+    b.face(contours, front)?;
+    let mapped = map_art(art, bounds.width().max(bounds.height()), &camera, |p| (camera.place(p, 0.0), front))?;
+    Ok(Shaded { mapped, ..b.finish() })
 }
 
 /// The distance from `p` to the segment `a`–`b`.
@@ -696,6 +957,7 @@ fn edge_distance(rings: &[Vec<Point>], p: Point) -> f64 {
 
 /// The edges of `rings` filed in a grid of square buckets, so the nearest edge to a point is
 /// found among the buckets around it rather than among all the edges.
+#[derive(Clone)]
 struct Edges {
     edges: Vec<(Point, Point)>,
     origin: Point,
@@ -844,11 +1106,208 @@ fn clip(ring: &[Point], cell: Rect) -> Vec<Point> {
     if pts.len() >= 3 && signed_area(&pts).abs() > 1e-12 { pts } else { vec![] }
 }
 
+/// Do any two edges of `rings` cross, touch or overlap, other than neighbours meeting at their
+/// shared corner? Rings that don't outline a shape [`cut_cell`] can follow exactly.
+fn rings_cross(rings: &[Vec<Point>], edges: &Edges) -> bool {
+    let orient = |a: Point, b: Point, c: Point| (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    // Is `p`, on the line through `a` and `b`, within the segment?
+    let within = |a: Point, b: Point, p: Point| p.x >= a.x.min(b.x) && p.x <= a.x.max(b.x) && p.y >= a.y.min(b.y) && p.y <= a.y.max(b.y);
+    let meet = |a: Point, b: Point, c: Point, d: Point| -> bool {
+        let shared = [(a, c), (a, d), (b, c), (b, d)].iter().filter(|(p, q)| p == q).count();
+        match shared {
+            0 => {
+                let (o1, o2, o3, o4) = (orient(a, b, c), orient(a, b, d), orient(c, d, a), orient(c, d, b));
+                (o1 * o2 < 0.0 && o3 * o4 < 0.0)
+                    || (o1 == 0.0 && within(a, b, c))
+                    || (o2 == 0.0 && within(a, b, d))
+                    || (o3 == 0.0 && within(c, d, a))
+                    || (o4 == 0.0 && within(c, d, b))
+            }
+            1 => {
+                // Neighbours: they overlap only if they run back along each other.
+                let corner = if a == c || a == d { a } else { b };
+                let mine = if corner == a { b } else { a };
+                let other = if corner == c { d } else { c };
+                let along = (other.x - corner.x) * (mine.x - corner.x) + (other.y - corner.y) * (mine.y - corner.y);
+                orient(corner, mine, other) == 0.0 && along > 0.0
+            }
+            // The same edge, or one run back over.
+            _ => !(a == c && b == d),
+        }
+    };
+    for (a, b) in rings.iter().flat_map(|r| r.iter().zip(r.iter().cycle().skip(1)).take(r.len())) {
+        let mut crossed = false;
+        edges.each(Rect::from_points(*a, *b), |c, d| crossed = crossed || meet(*a, *b, c, d));
+        if crossed {
+            return true;
+        }
+    }
+    false
+}
+
+/// The part of a shape inside the rectangle `cell`, as contours (holes running the other way),
+/// for `rings` that don't cross ([`rings_cross`]). Unlike [`clip`] ring by ring, the pieces of
+/// the outline inside the cell are joined along the cell's sides as the shape is: a cell the
+/// outline leaves and comes back into is cut into separate parts, not one part tied to the
+/// other along the side. Where the outline crosses a side, the point depends only on the
+/// outline's edge and the side's line, so the cells either side cut it at exactly the same point.
+fn cut_cell(rings: &[Vec<Point>], cell: Rect) -> Vec<Vec<Point>> {
+    let (w, h) = (cell.width(), cell.height());
+    if !(w > 0.0 && h > 0.0) {
+        return vec![];
+    }
+    let perimeter = 2.0 * (w + h);
+    let inside = |p: Point| p.x >= cell.x0 && p.x <= cell.x1 && p.y >= cell.y0 && p.y <= cell.y1;
+    let on_x = |a: Point, b: Point, x: f64| Point::new(x, a.y + (x - a.x) / (b.x - a.x) * (b.y - a.y));
+    let on_y = |a: Point, b: Point, y: f64| Point::new(a.x + (y - a.y) / (b.y - a.y) * (b.x - a.x), y);
+    // The part of `a`→`b` inside the cell, as its ends' parameters and points (Liang–Barsky); an
+    // end on a side is computed from that side's line.
+    let span = |a: Point, b: Point| -> Option<(f64, Point, f64, Point)> {
+        let (mut t0, mut p0, mut t1, mut p1) = (0.0, a, 1.0, b);
+        let (dx, dy) = (b.x - a.x, b.y - a.y);
+        let mut side = |d: f64, t: f64, at: Point| {
+            if d > 0.0 && t > t0 {
+                (t0, p0) = (t, at);
+            } else if d < 0.0 && t < t1 {
+                (t1, p1) = (t, at);
+            }
+        };
+        if dx == 0.0 {
+            if a.x < cell.x0 || a.x > cell.x1 {
+                return None;
+            }
+        } else {
+            side(dx, (cell.x0 - a.x) / dx, on_x(a, b, cell.x0));
+            side(-dx, (cell.x1 - a.x) / dx, on_x(a, b, cell.x1));
+        }
+        if dy == 0.0 {
+            if a.y < cell.y0 || a.y > cell.y1 {
+                return None;
+            }
+        } else {
+            side(dy, (cell.y0 - a.y) / dy, on_y(a, b, cell.y0));
+            side(-dy, (cell.y1 - a.y) / dy, on_y(a, b, cell.y1));
+        }
+        (t0 < t1).then_some((t0, p0, t1, p1))
+    };
+    // How far round the cell's border a point on it is, anticlockwise (the way the cell's own
+    // outline runs, filled on its left) from its first corner.
+    let around = |p: Point| -> f64 {
+        let d = [(p.y - cell.y0).abs(), (p.x - cell.x1).abs(), (p.y - cell.y1).abs(), (p.x - cell.x0).abs()];
+        let nearest = (0..4).min_by(|i, j| d[*i].total_cmp(&d[*j])).unwrap_or(0);
+        match nearest {
+            0 => (p.x - cell.x0).clamp(0.0, w),
+            1 => w + (p.y - cell.y0).clamp(0.0, h),
+            2 => w + h + (cell.x1 - p.x).clamp(0.0, w),
+            _ => (2.0 * w + h + (cell.y1 - p.y).clamp(0.0, h)) % perimeter,
+        }
+    };
+    let corners = [
+        (0.0, Point::new(cell.x0, cell.y0)),
+        (w, Point::new(cell.x1, cell.y0)),
+        (w + h, Point::new(cell.x1, cell.y1)),
+        (2.0 * w + h, Point::new(cell.x0, cell.y1)),
+    ];
+    // The outline's runs through the cell, each from where it comes in to where it leaves, and
+    // the rings wholly inside the cell.
+    let mut runs: Vec<Vec<Point>> = vec![];
+    let mut whole: Vec<Vec<Point>> = vec![];
+    let mut beyond: Vec<&Vec<Point>> = vec![];
+    for ring in rings {
+        let n = ring.len();
+        let Some(first) = ring.iter().position(|p| !inside(*p)) else {
+            whole.push(ring.clone());
+            continue;
+        };
+        let mut run: Option<Vec<Point>> = None;
+        let mut touched = false;
+        for k in 0..n {
+            let (Some(a), Some(b)) = (ring.get((first + k) % n), ring.get((first + k + 1) % n)) else { continue };
+            match span(*a, *b) {
+                None => {
+                    // Out of the cell from `a` on: a run that reached `a` ends there.
+                    if let Some(r) = run.take() {
+                        runs.push(r);
+                    }
+                }
+                Some((t0, p0, t1, p1)) => {
+                    touched = true;
+                    if t0 > 0.0 {
+                        if let Some(r) = run.take() {
+                            runs.push(r);
+                        }
+                        run = Some(vec![p0]);
+                    }
+                    let r = run.get_or_insert_with(|| vec![p0]);
+                    if t1 < 1.0 {
+                        r.push(p1);
+                        runs.extend(run.take());
+                    } else {
+                        r.push(*b);
+                    }
+                }
+            }
+        }
+        runs.extend(run.take());
+        if !touched {
+            beyond.push(ring);
+        }
+    }
+    runs.retain(|r| r.len() >= 2);
+    let mut out: Vec<Vec<Point>> = vec![];
+    if runs.is_empty() {
+        // No outline crosses the cell's border, so the rings beyond it either fill all of the cell or none of it.
+        let filled_here = beyond.iter().filter(|r| contains(r, cell.center())).count() % 2 == 1;
+        if filled_here {
+            out.push(corners.iter().map(|c| c.1).collect());
+        }
+    } else {
+        // Join the runs: from where one leaves, along the border the way the cell runs (keeping
+        // the shape on the left) to where the next comes in.
+        let ends: Vec<(f64, f64)> = runs.iter().map(|r| (around(r[0]), around(r[r.len() - 1]))).collect();
+        let mut used = vec![false; runs.len()];
+        for start in 0..runs.len() {
+            if used[start] {
+                continue;
+            }
+            let mut contour: Vec<Point> = vec![];
+            let mut k = start;
+            for _ in 0..=runs.len() {
+                used[k] = true;
+                contour.extend(runs[k].iter().copied());
+                let leave = ends[k].1;
+                // The next run in along the border (this one's own start closes the contour).
+                let gap = |s: f64| (s - leave).rem_euclid(perimeter);
+                let next = (0..runs.len()).filter(|j| !used[*j] || *j == start).min_by(|i, j| gap(ends[*i].0).total_cmp(&gap(ends[*j].0)));
+                let Some(next) = next else { break };
+                let reach = gap(ends[next].0);
+                let mut passed: Vec<(f64, Point)> =
+                    corners.iter().map(|(s, p)| ((s - leave).rem_euclid(perimeter), *p)).filter(|(g, _)| *g > 0.0 && *g < reach).collect();
+                passed.sort_by(|a, b| a.0.total_cmp(&b.0));
+                contour.extend(passed.into_iter().map(|(_, p)| p));
+                if next == start {
+                    break;
+                }
+                k = next;
+            }
+            contour.dedup_by(|a, b| a.distance(*b) < 1e-12);
+            while contour.len() > 1 && contour.first().zip(contour.last()).is_some_and(|(a, b)| a.distance(*b) < 1e-12) {
+                contour.pop();
+            }
+            out.push(contour);
+        }
+    }
+    out.extend(whole);
+    out.retain(|c| c.len() >= 3 && signed_area(c).abs() > 1e-12 * cell.area().max(1e-12));
+    out
+}
+
 /// The shape's surface as a membrane under pressure, held at zero along its outline (and its
 /// holes): the solution of ∇²φ = −1 on a grid, with each node's distance to the outline along the
 /// grid lines taken into account where it is less than a grid step (Shortley–Weller), so the
 /// outline needn't fall on the grid. √φ rises vertically from the outline and rounds smoothly
 /// inside, without the creases a distance-to-the-edge height has along a shape's middle.
+#[derive(Clone)]
 struct Membrane {
     origin: Point,
     step: f64,
@@ -857,11 +1316,14 @@ struct Membrane {
     /// φ at each node; outside the shape, extrapolated (negative) from the inside, so
     /// interpolation crosses zero near the outline.
     phi: Vec<f64>,
+    /// The slope s of φ at the outline, as each node sees it (φ ≈ s·d − d²/2 at a distance d
+    /// from the outline); outside, the slope φ was continued at.
+    ratio: Vec<f64>,
     peak: f64,
 }
 
 impl Membrane {
-    fn solve(rings: &[Vec<Point>], origin: Point, step: f64, nx: usize, ny: usize) -> Self {
+    fn solve(rings: &[Vec<Point>], origin: Point, step: f64, nx: usize, ny: usize, guess: Option<&Membrane>) -> Self {
         let edges = Edges::new(rings);
         let node = |i: usize, j: usize| Point::new(origin.x + i as f64 * step, origin.y + j as f64 * step);
         let idx = |i: usize, j: usize| j * nx + i;
@@ -916,9 +1378,12 @@ impl Membrane {
                 }
             }
         }
-        // Successive over-relaxation.
-        let mut phi = vec![0.0; nx * ny];
+        // Successive over-relaxation, at the factor that converges fastest on a grid this size.
+        // Started from a coarser solution where there is one: far fewer sweeps to settle.
+        let mut phi: Vec<f64> =
+            (0..nx * ny).map(|k| if inside[k] { guess.map_or(0.0, |g| g.at(node(k % nx, k / nx)).max(0.0)) } else { 0.0 }).collect();
         let tolerance = 1e-9 * step * step * (nx * ny) as f64;
+        let omega = 2.0 / (1.0 + (std::f64::consts::PI / nx.max(ny).max(2) as f64).sin());
         for _ in 0..2000 {
             let mut change: f64 = 0.0;
             for k in 0..nx * ny {
@@ -930,7 +1395,7 @@ impl Membrane {
                     weight += w;
                     sum += w * n.map_or(0.0, |n| phi[n]);
                 }
-                let next = phi[k] + 1.8 * (sum / weight - phi[k]);
+                let next = phi[k] + omega * (sum / weight - phi[k]);
                 change = change.max((next - phi[k]).abs());
                 phi[k] = next;
             }
@@ -939,46 +1404,117 @@ impl Membrane {
             }
         }
         let peak = phi.iter().copied().fold(0.0, f64::max);
-        // Outside nodes next to the shape: φ continued past the outline at the slope of their
-        // inside neighbours, so values interpolated between them reach zero at the outline.
+        // Near the outline φ ≈ s·d − d²/2 at a distance d from it (∇²φ = −1 across a straight
+        // edge), s its slope at the outline. Each inside node's s; a node within a step and a
+        // quarter of the outline would divide its small error by a small distance, so its s is its
+        // neighbours'. (Not a whole step: an edge along a grid line lies a whole number of steps
+        // from the nodes, and rounding would decide which side of the line they fall.)
+        // Outside nodes near the shape (three rings of them, for the cubic interpolation's reach)
+        // get their inner neighbours' s too, and φ continued past the outline with it, so values
+        // interpolated between them reach zero at the outline.
+        // Only nodes this near the outline take part (the rim band and the cubic's reach), so only
+        // their distances are found.
+        let reach = (Self::RIM + 4.0) * step;
+        let dist: Vec<f64> = (0..nx * ny)
+            .map(|k| {
+                let p = node(k % nx, k / nx);
+                if edges.near(p, reach) { edges.distance(p) } else { f64::INFINITY }
+            })
+            .collect();
         let mut ext = phi.clone();
-        for j in 0..ny {
-            for i in 0..nx {
-                let k = idx(i, j);
-                if inside[k] {
-                    continue;
+        let mut ratio: Vec<f64> = (0..nx * ny)
+            .map(|k| if inside[k] && dist[k].is_finite() { (phi[k] + dist[k] * dist[k] / 2.0) / dist[k].max(1e-9 * step) } else { 0.0 })
+            .collect();
+        let mut known: Vec<bool> = (0..nx * ny).map(|k| inside[k] && dist[k] >= 1.25 * step).collect();
+        // First from the nodes farther inside; then, for a shape too thin to have any
+        // nearby, from every inside node.
+        for round in 0..8 {
+            if round == 4 {
+                for (k, i) in known.iter_mut().zip(&inside) {
+                    *k |= *i;
                 }
-                let d_out = edges.distance(node(i, j));
-                let mut slopes = vec![];
-                for (di, dj) in [(1isize, 0isize), (-1, 0), (0, 1), (0, -1)] {
-                    let (ni, nj) = (i as isize + di, j as isize + dj);
-                    if ni < 0 || nj < 0 || ni as usize >= nx || nj as usize >= ny || !inside[idx(ni as usize, nj as usize)] {
+            }
+            let before = known.clone();
+            for j in 0..ny {
+                for i in 0..nx {
+                    let k = idx(i, j);
+                    if before[k] {
                         continue;
                     }
-                    let d_in = edges.distance(node(ni as usize, nj as usize)).max(1e-9);
-                    slopes.push(phi[idx(ni as usize, nj as usize)] / d_in);
-                }
-                if !slopes.is_empty() {
-                    ext[k] = -d_out * slopes.iter().sum::<f64>() / slopes.len() as f64;
+                    let mut slopes = vec![];
+                    for (di, dj) in [(1isize, 0isize), (-1, 0), (0, 1), (0, -1)] {
+                        let (ni, nj) = (i as isize + di, j as isize + dj);
+                        if ni < 0 || nj < 0 || ni as usize >= nx || nj as usize >= ny || !before[idx(ni as usize, nj as usize)] {
+                            continue;
+                        }
+                        slopes.push(ratio[idx(ni as usize, nj as usize)]);
+                    }
+                    if !slopes.is_empty() {
+                        let slope = slopes.iter().sum::<f64>() / slopes.len() as f64;
+                        if !inside[k] {
+                            let d = dist[k];
+                            ext[k] = if d.is_finite() { -d * slope - d * d / 2.0 } else { 0.0 };
+                        }
+                        ratio[k] = slope;
+                        known[k] = true;
+                    }
                 }
             }
         }
-        Self { origin, step, nx, ny, phi: ext, peak }
+        Self { origin, step, nx, ny, phi: ext, ratio, peak }
+    }
+
+    /// How many cells in from the outline φ follows the distance to it ([`Self::at_rim`]).
+    const RIM: f64 = 1.5;
+
+    /// φ at `p`, which lies `d` from the outline. Within [`Self::RIM`] cells of it, φ follows that
+    /// exact distance (s·d − d²/2): the grid alone staircases along a curved outline, and the
+    /// lifted rim, steep there, would show that as ripples. Farther in, the grid is the better
+    /// guide: the slope's own small errors grow with the distance.
+    fn at_rim(&self, p: Point, d: f64) -> f64 {
+        let grid = self.at(p);
+        let band = Self::RIM * self.step;
+        // A distance that isn't a number (or none: far inside) leaves the grid's value.
+        if d.partial_cmp(&band) != Some(std::cmp::Ordering::Less) {
+            return grid;
+        }
+        let t = (d / band).clamp(0.0, 1.0);
+        let w = t * t * (3.0 - 2.0 * t);
+        (self.interpolate(&self.ratio, p) * d - d * d.abs() / 2.0) * (1.0 - w) + grid * w
     }
 
     /// φ at `p`, interpolated between the four nodes around it.
     fn at(&self, p: Point) -> f64 {
+        self.interpolate(&self.phi, p)
+    }
+
+    /// One of the node fields at `p`, interpolated smoothly (Catmull-Rom) between the sixteen
+    /// nodes around it: its slope is continuous, so the surface lifted from it has no creases
+    /// along the grid lines for a highlight to show.
+    fn interpolate(&self, field: &[f64], p: Point) -> f64 {
         let fx = ((p.x - self.origin.x) / self.step).clamp(0.0, (self.nx - 1) as f64);
         let fy = ((p.y - self.origin.y) / self.step).clamp(0.0, (self.ny - 1) as f64);
-        let (i, j) = ((fx.floor() as usize).min(self.nx.saturating_sub(2)), (fy.floor() as usize).min(self.ny.saturating_sub(2)));
-        let (tx, ty) = (fx - i as f64, fy - j as f64);
-        let v = |i: usize, j: usize| self.phi.get(j * self.nx + i).copied().unwrap_or(0.0);
+        let v = |i: isize, j: isize| {
+            let i = i.clamp(0, self.nx as isize - 1) as usize;
+            let j = j.clamp(0, self.ny as isize - 1) as usize;
+            field.get(j * self.nx + i).copied().unwrap_or(0.0)
+        };
         if self.nx < 2 || self.ny < 2 {
             return v(0, 0);
         }
-        let top = v(i, j) * (1.0 - tx) + v(i + 1, j) * tx;
-        let bottom = v(i, j + 1) * (1.0 - tx) + v(i + 1, j + 1) * tx;
-        top * (1.0 - ty) + bottom * ty
+        let (i, j) = ((fx.floor() as isize).min(self.nx as isize - 2), (fy.floor() as isize).min(self.ny as isize - 2));
+        let weights = |t: f64| {
+            let (t2, t3) = (t * t, t * t * t);
+            [(-t3 + 2.0 * t2 - t) / 2.0, (3.0 * t3 - 5.0 * t2 + 2.0) / 2.0, (-3.0 * t3 + 4.0 * t2 + t) / 2.0, (t3 - t2) / 2.0]
+        };
+        let (wx, wy) = (weights(fx - i as f64), weights(fy - j as f64));
+        let mut sum = 0.0;
+        for (dj, wj) in wy.iter().enumerate() {
+            for (di, wi) in wx.iter().enumerate() {
+                sum += wi * wj * v(i + di as isize - 1, j + dj as isize - 1);
+            }
+        }
+        sum
     }
 }
 
@@ -997,34 +1533,242 @@ fn material(outline: &PathData, cell: Rect) -> Option<Vec<Vec<Point>>> {
 
 /// Inflate: the shape puffed out like a cushion, its edge kept where the art's outline is.
 pub fn inflate(path: &PathData, bounds: Rect, options: Inflate, view: View) -> Result<Vec<Facet>, String> {
+    inflate_lit(path, bounds, options, view).map(|s| s.facets)
+}
+
+/// [`inflate`], with the shadow the solid casts.
+pub fn inflate_lit(path: &PathData, bounds: Rect, options: Inflate, view: View) -> Result<Shaded, String> {
+    inflate_mapped(path, bounds, options, view, &[])
+}
+
+/// [`inflate_lit`], with `art` (pieces of rings in the art's coordinates) laid on the puffed front.
+pub fn inflate_mapped(path: &PathData, bounds: Rect, options: Inflate, view: View, art: &[Vec<Vec<Point>>]) -> Result<Shaded, String> {
     check_bounds(bounds)?;
     let o = options.sanitized();
-    let rings = rings(path, bounds.width().max(bounds.height()), MAX_SOLID_POINTS)?;
-    if rings.is_empty() {
-        return Ok(vec![]);
+    let Some(puff) = Puff::solve(path, bounds, o)? else { return Ok(Shaded::default()) };
+    let extent = o.depth + 2.0 * puff.height;
+    build_inflate(path, bounds, o, view, art, puff, &Stack { below: &[], half: o.depth / 2.0, extent, raise: 0.0 })
+}
+
+/// Inflate on nested layers (bottom first), each puffed on the surface of those below it: where a
+/// layer lies inside another it rises from that one's surface, meeting it at its own outline, so
+/// a star on a disc on a square is three cushions sitting on each other. Layer k's depth is
+/// `depths[k]` (0..2,000 pt; without an entry, the options' depth): the bottom layer's is its flat
+/// side between front and back, as on one shape; a layer above stands its depth up from the
+/// surface below on walls of its own outline, then puffs. They turn together about the centre of
+/// `bounds` (all the layers'), and `art` goes on the top layer. One [`Shaded`] per layer, bottom
+/// first, to be drawn in that order.
+pub fn inflate_stack(
+    layers: &[PathData],
+    bounds: Rect,
+    options: Inflate,
+    view: View,
+    art: &[Vec<Vec<Point>>],
+    depths: &[f64],
+) -> Result<Vec<Shaded>, String> {
+    check_bounds(bounds)?;
+    if layers.len() > MAX_LAYERS {
+        return Err(format!("Inflate takes at most {MAX_LAYERS} layers"));
     }
-    let size = bounds.width().max(bounds.height());
-    if size <= 0.0 {
-        return Ok(vec![]);
+    let o = options.sanitized();
+    let depth = |k: usize| depths.get(k).copied().filter(|d| d.is_finite()).map_or(o.depth, |d| d.clamp(0.0, 2000.0));
+    let mut puffs = Vec::with_capacity(layers.len());
+    for (k, path) in layers.iter().enumerate() {
+        // The bottom layer's depth is its own flat side; those above stand on theirs.
+        let raise = if k == 0 { 0.0 } else { depth(k) };
+        puffs.push(Puff::solve(path, bounds, o)?.map(|p| Puff { raise, ..p }));
     }
-    const CELLS: usize = 48;
-    let cell = size / CELLS as f64;
-    let (nx, ny) = (((bounds.width() / cell).ceil() as usize).max(1), ((bounds.height() / cell).ceil() as usize).max(1));
-    let m = Membrane::solve(&rings, bounds.origin(), cell, nx + 1, ny + 1);
-    let edges = Edges::new(&rings);
-    let outline = PathData::new(rings.iter().map(|r| vectorcraft_geom::SubPath::polyline(r, true)).collect());
-    // A circle of radius r puffs into a half sphere of radius r at 50 % (its membrane peaks at r²/4).
-    let height = 2.0 * m.peak.sqrt() * o.volume / 50.0;
-    let lift = |p: Point| {
-        if m.peak <= 0.0 || edges.near(p, 1e-9) {
+    let bottom = Inflate { depth: depth(0), ..o };
+    let extent = bottom.depth + puffs.iter().flatten().map(|p| 2.0 * p.height + p.raise).sum::<f64>();
+    let upper = Inflate { depth: 0.0, both_sides: false, cap: false, twist: 0.0, taper: 1.0, ..o };
+    let mut below: Vec<Puff> = vec![];
+    let mut out = Vec::with_capacity(layers.len());
+    let top = layers.len().saturating_sub(1);
+    for (k, (path, puff)) in layers.iter().zip(puffs).enumerate() {
+        let Some(puff) = puff else {
+            out.push(Shaded::default());
+            continue;
+        };
+        let layer = if k == 0 { bottom } else { upper };
+        let art = if k == top { art } else { &[] };
+        let stack = Stack { below: &below, half: bottom.depth / 2.0, extent, raise: puff.raise };
+        out.push(build_inflate(path, bounds, layer, view, art, puff.clone(), &stack)?);
+        below.push(puff);
+    }
+    Ok(out)
+}
+
+/// The most layers [`inflate_stack`] takes: each is a membrane solved and a surface built.
+pub const MAX_LAYERS: usize = 16;
+
+/// How a layer of [`inflate_stack`] sits: on the puffs `below` it, its front `half` the bottom
+/// layer's depth ahead of the middle, `raise` above the surface below on walls of its own, in a
+/// view framed for the stack's whole `extent`.
+struct Stack<'a> {
+    below: &'a [Puff],
+    half: f64,
+    extent: f64,
+    raise: f64,
+}
+
+/// One shape's puff: the membrane over it and how high it rises.
+#[derive(Clone)]
+struct Puff {
+    rings: Vec<Vec<Point>>,
+    m: Membrane,
+    edges: Edges,
+    height: f64,
+    /// [`Inflate::pillow`] as a share (0..1).
+    pillow: f64,
+    /// In a stack, how far the layer stands up from the surface below before it puffs.
+    raise: f64,
+}
+
+impl Puff {
+    /// `None` for a shape with no area to puff.
+    fn solve(path: &PathData, bounds: Rect, o: Inflate) -> Result<Option<Self>, String> {
+        let rings = rings(path, bounds.width().max(bounds.height()), MAX_SOLID_POINTS)?;
+        let size = bounds.width().max(bounds.height());
+        if rings.is_empty() || size <= 0.0 {
+            return Ok(None);
+        }
+        let cells = if o.draft { 24 } else { 48 };
+        let cell = size / cells as f64;
+        let (nx, ny) = (((bounds.width() / cell).ceil() as usize).max(1), ((bounds.height() / cell).ceil() as usize).max(1));
+        // The membrane is solved on a grid twice as fine as the facets (a draft's as coarse): its
+        // error shrinks with the square of the step, and a mirror finish shows even a slight
+        // unevenness of the surface's slope.
+        let fineness = if o.draft { 1 } else { 2 };
+        let coarse = Membrane::solve(&rings, bounds.origin(), cell, nx + 1, ny + 1, None);
+        let m = if fineness > 1 {
+            Membrane::solve(&rings, bounds.origin(), cell / fineness as f64, nx * fineness + 1, ny * fineness + 1, Some(&coarse))
+        } else {
+            coarse
+        };
+        let edges = Edges::new(&rings);
+        // A circle of radius r puffs into a half sphere of radius r at 50 % (its membrane peaks at r²/4).
+        let height = 2.0 * m.peak.sqrt() * o.volume / 50.0;
+        Ok(Some(Self { rings, m, edges, height, pillow: o.pillow / 100.0, raise: 0.0 }))
+    }
+
+    /// The height's profile across the puff, from φ's share `s` (0 at the outline, 1 at the peak):
+    /// a dome (√s, rising straight up at the outline) blended with a pillow (s·(2 − s), rising at
+    /// an angle and level on top).
+    fn profile(&self, s: f64) -> f64 {
+        let s = s.clamp(0.0, 1.0);
+        (1.0 - self.pillow) * s.sqrt() + self.pillow * s * (2.0 - s)
+    }
+
+    /// How high the surface rises at `p` (0 on and outside the outline).
+    fn lift(&self, p: Point) -> f64 {
+        if self.m.peak <= 0.0 || self.edges.near(p, 1e-9) {
             return 0.0;
         }
-        height * (m.at(p).max(0.0) / m.peak).sqrt()
+        let d = if self.edges.near(p, Membrane::RIM * self.m.step) { self.edges.distance(p) } else { f64::INFINITY };
+        self.height * self.profile(self.m.at_rim(p, d).max(0.0) / self.m.peak)
+    }
+
+    /// Is `p` inside the shape? Near the outline exactly; farther off, by φ's sign.
+    fn inside(&self, p: Point) -> bool {
+        if self.edges.near(p, Membrane::RIM * self.m.step) { filled(&self.rings, p) } else { self.m.at(p) > 0.0 }
+    }
+
+    /// What a layer above stands on, at `p`: this puff and its raise inside the outline.
+    fn stand(&self, p: Point) -> f64 {
+        let raise = if self.raise > 0.0 && self.inside(p) { self.raise } else { 0.0 };
+        raise + self.lift(p)
+    }
+
+    /// The surface's normal at `p` from φ's value and slope there, scaled to stay finite where a
+    /// dome rises straight up: (−c·∇φ, r), with r = √s (1 for a full pillow, never vertical) and
+    /// c = dz/dφ · r.
+    fn normal(&self, phi: f64, gx: f64, gy: f64, on_edge: bool) -> (f64, f64, f64) {
+        if self.m.peak <= 0.0 {
+            return (0.0, 0.0, 1.0);
+        }
+        let s = (phi.max(0.0) / self.m.peak).min(1.0);
+        let r = if self.pillow >= 1.0 {
+            1.0
+        } else if on_edge {
+            0.0
+        } else {
+            s.sqrt()
+        };
+        let c = self.height / self.m.peak * ((1.0 - self.pillow) * 0.5 + self.pillow * (2.0 - 2.0 * s) * r);
+        (-c * gx, -c * gy, r)
+    }
+}
+
+/// Inflate's surface for one solved `puff`, standing on `stack`'s layers below it.
+fn build_inflate(
+    path: &PathData,
+    bounds: Rect,
+    o: Inflate,
+    view: View,
+    art: &[Vec<Vec<Point>>],
+    puff: Puff,
+    stack: &Stack,
+) -> Result<Shaded, String> {
+    let size = bounds.width().max(bounds.height());
+    let cells = if o.draft { 24 } else { 48 };
+    let cell = size / cells as f64;
+    let (nx, ny) = (((bounds.width() / cell).ceil() as usize).max(1), ((bounds.height() / cell).ceil() as usize).max(1));
+    let Puff { rings, m, edges, .. } = &puff;
+    let outline = PathData::new(rings.iter().map(|r| vectorcraft_geom::SubPath::polyline(r, true)).collect());
+    // The layers below: what this one stands on, and that surface's slope.
+    let under = |p: Point| stack.below.iter().map(|b| b.stand(p)).sum::<f64>();
+    let base_slope = |p: Point| {
+        if stack.below.is_empty() {
+            return (0.0, 0.0);
+        }
+        let e = 0.02 * cell;
+        let dx = (under(Point::new(p.x + e, p.y)) - under(Point::new(p.x - e, p.y))) / (2.0 * e);
+        let dy = (under(Point::new(p.x, p.y + e)) - under(Point::new(p.x, p.y - e))) / (2.0 * e);
+        (dx, dy)
     };
-    let camera = Camera::new(view, bounds, o.depth + 2.0 * height);
+    let own = |p: Point| puff.lift(p);
+    let lift = |p: Point| own(p) + under(p) + stack.raise;
+    // The front's exact outward normal at `p` (art space, before the view turns it), from φ and
+    // its slope ([`Puff::normal`]); a stacked layer adds the slope of the surface it stands on.
+    // φ is continued past the outline (negative) for the slope there.
+    // Distances for the normals come from the curves flattened 64 times finer, in as many pieces
+    // as that takes: the distance to a polyline turns its direction a step at each corner, and a
+    // tight highlight or a mirror's reflection shows each step as a streak across the rim. (A
+    // draft makes do with the outline as it is.)
+    let fine_rings = (!o.draft)
+        .then(|| rings_within(path, (size / 2000.0).max(0.05) / 64.0, FINE_PIECES, MAX_PLANE_POINTS).ok())
+        .flatten()
+        .filter(|r| !r.is_empty());
+    let fine = fine_rings.as_ref().map(|r| Edges::new(r));
+    let (smooth_rings, smooth_edges) = (fine_rings.as_ref().unwrap_or(rings), fine.as_ref().unwrap_or(edges));
+    // The mesh's points lie in the shape as flattened coarsely, which is within that flattening's
+    // tolerance of the fine one: a point farther than that from the fine outline is inside it,
+    // with no need to test (a test runs through every edge).
+    let coarse = (size / 2000.0).max(0.05);
+    let e = 0.02 * cell;
+    let signed = |p: Point, surely_inside: bool, rim: bool| {
+        if !rim {
+            return m.at(p);
+        }
+        let d = smooth_edges.distance(p);
+        m.at_rim(p, if surely_inside || filled(smooth_rings, p) { d } else { -d })
+    };
+    let slope_normal = |p: Point| -> V3 {
+        // Beyond the rim band φ is the grid's alone: no distances needed.
+        let rim = smooth_edges.near(p, Membrane::RIM * m.step + 2.0 * e);
+        let inside = !rim || smooth_edges.distance(p) > e + 2.0 * coarse;
+        let signed = |q: Point| signed(q, inside, rim);
+        let gx = (signed(Point::new(p.x + e, p.y)) - signed(Point::new(p.x - e, p.y))) / (2.0 * e);
+        let gy = (signed(Point::new(p.x, p.y + e)) - signed(Point::new(p.x, p.y - e))) / (2.0 * e);
+        let (ax, ay, r) = puff.normal(signed(p), gx, gy, edges.near(p, 1e-9));
+        let (bx, by) = base_slope(p);
+        let n = V3(ax - r * bx, ay - r * by, r);
+        if n.dot(n) > 1e-24 && n.0.is_finite() && n.1.is_finite() { n.unit() } else { V3(0.0, 0.0, 1.0) }
+    };
+    let camera = Camera::new(view, bounds, stack.extent);
     // Without its back cap the object is a shell open behind, its inside showing.
-    let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![] };
-    let half = o.depth / 2.0;
+    let mut b = Builder { camera: &camera, closed: o.cap, facets: vec![], casters: vec![], smooth: vec![], hidden: vec![] };
+    let half = stack.half;
     // The back: turned and scaled by the twist and taper, its puff too.
     let back_turn = Turn::new(bounds, o.twist, o.taper, 1.0);
     // The grid's cells, those the surface rises steeply across (near the outline) cut into
@@ -1038,11 +1782,16 @@ pub fn inflate(path: &PathData, bounds: Rect, options: Inflate, view: View) -> R
     let at = |qx: usize, qy: usize| Point::new(bounds.x0 + qx as f64 * unit, bounds.y0 + qy as f64 * unit);
     let base = |i: usize, j: usize| Rect::from_points(at(i * FINE, j * FINE), at((i + 1) * FINE, (j + 1) * FINE));
     // The shape's part of a rectangle, as rings.
+    // Rings that cross each other are cut ring by ring instead, and joined by the fill rule.
+    let simple = !rings_cross(rings, edges);
     let cut = |r: Rect| -> Vec<Vec<Point>> {
         // A cell no edge crosses is wholly inside the shape or wholly outside it.
         if !edges.touch(r) {
             let corners = vec![Point::new(r.x0, r.y0), Point::new(r.x1, r.y0), Point::new(r.x1, r.y1), Point::new(r.x0, r.y1)];
-            return if filled(&rings, r.center()) { vec![corners] } else { vec![] };
+            return if filled(rings, r.center()) { vec![corners] } else { vec![] };
+        }
+        if simple {
+            return cut_cell(rings, r);
         }
         let pieces: Vec<Vec<Point>> = rings.iter().map(|ring| clip(ring, r)).filter(|c| !c.is_empty()).collect();
         if pieces.iter().map(|p| signed_area(p)).sum::<f64>() <= 1e-9 * r.area() {
@@ -1057,7 +1806,7 @@ pub fn inflate(path: &PathData, bounds: Rect, options: Inflate, view: View) -> R
     let levels: Vec<u32> = (0..nx * ny)
         .map(|k| {
             let pieces = cut(base(k % nx, k / nx));
-            let (lo, hi) = pieces.iter().flatten().map(|q| lift(*q)).fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), h| (lo.min(h), hi.max(h)));
+            let (lo, hi) = pieces.iter().flatten().map(|q| own(*q)).fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), h| (lo.min(h), hi.max(h)));
             let rise = if pieces.is_empty() { 0.0 } else { (hi - lo) / cell };
             if rise > 6.0 {
                 2
@@ -1150,7 +1899,10 @@ pub fn inflate(path: &PathData, bounds: Rect, options: Inflate, view: View) -> R
                     let front: Vec<Vec<V3>> =
                         pieces.iter().zip(&lifts).map(|(p, h)| p.iter().zip(h).map(|(q, h)| camera.place(*q, half + h)).collect()).collect();
                     let n = newell(&front);
-                    b.face(front, n)?;
+                    // The surface's exact normals (art space), for smooth shading.
+                    let slopes: Option<Vec<V3>> = camera.rig.smooth().then(|| pieces.iter().flatten().map(|q| slope_normal(*q)).collect());
+                    let given = slopes.as_ref().map(|s| s.iter().map(|m| camera.rotate(*m)).collect());
+                    b.face_with(front, n, given)?;
                     if o.both_sides && o.cap {
                         // The back winds the same way round as the front, so its outward normal is
                         // reversed.
@@ -1160,7 +1912,15 @@ pub fn inflate(path: &PathData, bounds: Rect, options: Inflate, view: View) -> R
                             .map(|(p, h)| p.iter().zip(h).map(|(q, h)| camera.place(back_turn.apply(*q), -half - h * back_turn.scale)).collect())
                             .collect();
                         let n = newell(&back);
-                        b.face(back, V3(-n.0, -n.1, -n.2))?;
+                        // Its exact normals too: the front's mirrored front to back, turned with
+                        // it (a taper scales it evenly, which leaves them be). Averaged ones would
+                        // differ from the front's where the two meet at the rim, and the depth test
+                        // switching between them there shows as a comb.
+                        let (sin, cos) = (back_turn.sin, back_turn.cos);
+                        let given = slopes
+                            .as_ref()
+                            .map(|s| s.iter().map(|m| camera.rotate(V3(m.0 * cos - m.1 * sin, m.0 * sin + m.1 * cos, -m.2))).collect());
+                        b.face_with(back, V3(-n.0, -n.1, -n.2), given)?;
                     }
                 }
             }
@@ -1170,10 +1930,18 @@ pub fn inflate(path: &PathData, bounds: Rect, options: Inflate, view: View) -> R
         let back: Vec<Vec<V3>> = rings.iter().map(|r| r.iter().map(|p| camera.place(back_turn.apply(*p), -half)).collect()).collect();
         b.face(back, camera.rotate(V3(0.0, 0.0, -1.0)))?;
     }
+    if stack.raise > 0.0 {
+        // A stacked layer's walls, from the surface below up to where its puff starts.
+        for ring in rings {
+            let low: Vec<V3> = ring.iter().map(|p| camera.place(*p, half + under(*p))).collect();
+            let high: Vec<V3> = ring.iter().map(|p| camera.place(*p, half + under(*p) + stack.raise)).collect();
+            b.band(&high, &low, |i| outward(ring, i, 0.0))?;
+        }
+    }
     if o.depth > 0.0 {
         // The sides, cut into slices that follow a twist or taper.
         let slices = if o.twist != 0.0 || o.taper != 1.0 { ((o.twist.abs() / 6.0).ceil() as usize).clamp(8, 64) } else { 1 };
-        for ring in &rings {
+        for ring in rings {
             let at = |k: usize| -> Vec<V3> {
                 let t = k as f64 / slices as f64;
                 let turn = Turn::new(bounds, o.twist, o.taper, t);
@@ -1184,7 +1952,9 @@ pub fn inflate(path: &PathData, bounds: Rect, options: Inflate, view: View) -> R
             }
         }
     }
-    Ok(b.finish())
+    // Art outside the shape stays on the plane of its outline.
+    let mapped = map_art(art, size, &camera, |p| (camera.place(p, half + lift(p)), camera.rotate(slope_normal(p))))?;
+    Ok(Shaded { mapped, ..b.finish() })
 }
 
 #[cfg(test)]

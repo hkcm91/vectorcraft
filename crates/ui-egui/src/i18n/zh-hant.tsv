@@ -3664,9 +3664,15 @@ lighting	Light	光源
 	Taper	錐化
 	Twist	扭轉
 	Volume	體積
+	Pillow	軟墊
+	Layer Depths	圖層深度
+	Layer {n} (bottom)	圖層 {n}（底層）
+	Layer {n}	圖層 {n}
+	Use Depth for All	全部使用深度
 3d	Cap	封口
 3d	Solid	實心
 3d	Hollow	空心
+3d	Surface	表面
 3d	Bevel	斜角
 3d	Rounded	圓角
 3d	Space	間距
@@ -3685,3 +3691,89 @@ lighting	Light	光源
 @msg	unknown parameter `{key}`; the command takes: {keys}	未知的參數 `{key}`；此指令接受：{keys}
 	Load EPS into Clipboard	將 EPS 載入剪貼簿
 @msg	an image of {w} × {h} pixels is too large to draw	{w} × {h} 像素的影像過大，無法繪製
+# Arch tool and its options (a VectorCraft addition).
+	Arch	拱形
+	Arch Tool	拱形工具
+	Arch Tool Options	拱形工具選項
+	Arch Count:	拱形數量：
+	Thickness:	粗細：
+	Segments:	分段數：
+	Close into Rings	封閉為圓環
+	Color Palette	色票組
+	Add Color	新增顏色
+	Remove Color	移除顏色
+	Shuffle Colors	隨機排列顏色
+	Fill Style	填色樣式
+	Wide	寬
+	Pointed	尖拱
+	Scallop	扇貝
+	Wavy	波浪
+	Segmented	分段
+	Flat	平面
+	Glossy	光澤
+	Jelly	果凍
+	Muted	柔和
+	Pearlescent	珍珠
+	Classic Rainbow	經典彩虹
+	Candy Arch	糖果拱形
+	Double Arch	雙拱形
+	Scallop Gate	扇貝拱門
+	Dream Tunnel	夢幻隧道
+	Wavy Arch	波浪拱形
+# Dimension tool and its options.
+	Dimension	尺寸標註
+	Dimension Tool	尺寸標註工具
+	Dimension Tool Options	尺寸標註工具選項
+	Linear	線性
+	Angular	角度
+	Aligned	對齊
+	Precision:	精確度：
+	Ends:	端點：
+	Arrow	箭頭
+	Tick	刻痕
+	Dot	圓點
+	Line Weight:	線條寬度：
+	Font Size:	字體大小：
+	Show Units	顯示單位
+# 3D lighting and shadows.
+	Light Source	光源
+	Softness	柔和度
+	Shadows	陰影
+	Below Object	物件下方
+	Behind Object	物件後方
+	Distance	距離
+	Delete Light	刪除光源
+	Add Light	新增光源
+	Add Graphic	新增圖形
+	Finish	飾面
+	Delete Graphic	刪除圖形
+	Make a symbol to lay it on the surface.	建立符號後即可將其放到表面上。
+	More Lights	更多光源
+# 3D materials and lighting presets.
+	Material	材質
+	Highlight	高光
+	Roughness	粗糙度
+	Metallic	金屬感
+	Rim Light	輪廓光
+	Cel Bands	色階數
+	Reflections	反射
+	Outdoor	戶外
+	Sunset	日落
+	Ambient Occlusion	環境光遮蔽
+	Contact Shadow	接觸陰影
+	Straight	垂直
+	From Light	來自光源
+	Smooth shading	平滑著色
+	Ambient Color	環境光顏色
+	Soft Touch	柔觸
+	Plastic	塑膠
+	Metal	金屬
+	Chrome	鉻
+	Rim Glow	輪廓光暈
+	Toon	卡通
+	Standard	標準
+	Studio	攝影棚
+	Top Light	頂光
+	Dramatic	戲劇性
+	Warm & Cool	冷暖光
+3d	Matte	霧面

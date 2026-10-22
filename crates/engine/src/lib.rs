@@ -1697,6 +1697,8 @@ mod tests_adjust;
 #[cfg(test)]
 mod tests_appearance;
 #[cfg(test)]
+mod tests_arch;
+#[cfg(test)]
 mod tests_areafit;
 #[cfg(test)]
 mod tests_assets;
@@ -1744,6 +1746,8 @@ mod tests_css;
 mod tests_cut;
 #[cfg(test)]
 mod tests_dashalign;
+#[cfg(test)]
+mod tests_dimension;
 #[cfg(test)]
 mod tests_distort;
 #[cfg(test)]

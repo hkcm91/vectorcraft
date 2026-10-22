@@ -4250,9 +4250,15 @@ theme	Appearance	Erscheinungsbild
 	Taper	Verjüngung
 	Twist	Verdrehung
 	Volume	Volumen
+	Pillow	Kissen
+	Layer Depths	Ebenentiefen
+	Layer {n} (bottom)	Ebene {n} (unten)
+	Layer {n}	Ebene {n}
+	Use Depth for All	Tiefe für alle
 3d	Cap	Deckflächen
 3d	Solid	Massiv
 3d	Hollow	Hohl
+3d	Surface	Oberfläche
 3d	Bevel	Abgeflachte Kante
 3d	Rounded	Abgerundet
 3d	Space	Abstand
@@ -4271,3 +4277,89 @@ theme	Appearance	Erscheinungsbild
 @msg	unknown parameter `{key}`; the command takes: {keys}	unbekannter Parameter `{key}`; der Befehl akzeptiert: {keys}
 	Load EPS into Clipboard	EPS in die Zwischenablage laden
 @msg	an image of {w} × {h} pixels is too large to draw	ein Bild mit {w} × {h} Pixeln ist zu groß, um gezeichnet zu werden
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Torbogen
+	Arch Tool	Torbogen-Werkzeug
+	Arch Tool Options	Optionen für das Torbogen-Werkzeug
+	Arch Count:	Anzahl Bögen:
+	Thickness:	Stärke:
+	Segments:	Segmente:
+	Close into Rings	Zu Ringen schließen
+	Color Palette	Farbpalette
+	Add Color	Farbe hinzufügen
+	Remove Color	Farbe entfernen
+	Shuffle Colors	Farben mischen
+	Fill Style	Füllstil
+	Wide	Breit
+	Pointed	Spitz
+	Scallop	Gewellt
+	Wavy	Wellig
+	Segmented	Segmentiert
+	Flat	Flach
+	Glossy	Glänzend
+	Jelly	Gelee
+	Muted	Gedämpft
+	Pearlescent	Perlmutt
+	Classic Rainbow	Klassischer Regenbogen
+	Candy Arch	Bonbon-Torbogen
+	Double Arch	Doppelter Torbogen
+	Scallop Gate	Muschel-Tor
+	Dream Tunnel	Traumtunnel
+	Wavy Arch	Wellen-Torbogen
+# Dimension tool and its options.
+	Dimension	Bemaßung
+	Dimension Tool	Bemaßungswerkzeug
+	Dimension Tool Options	Optionen für das Bemaßungswerkzeug
+	Linear	Linear
+	Angular	Winkel
+	Aligned	Ausgerichtet
+	Precision:	Genauigkeit:
+	Ends:	Enden:
+	Arrow	Pfeil
+	Tick	Strich
+	Dot	Punkt
+	Line Weight:	Linienstärke:
+	Font Size:	Schriftgröße:
+	Show Units	Einheiten anzeigen
+# 3D lighting and shadows.
+	Light Source	Lichtquelle
+	Softness	Weichheit
+	Shadows	Schatten
+	Below Object	Unter dem Objekt
+	Behind Object	Hinter dem Objekt
+	Distance	Abstand
+	Delete Light	Licht löschen
+	Add Light	Licht hinzufügen
+	Add Graphic	Grafik hinzufügen
+	Finish	Oberflächengüte
+	Delete Graphic	Grafik löschen
+	Make a symbol to lay it on the surface.	Erstellen Sie ein Symbol, um es auf die Oberfläche zu legen.
+	More Lights	Weitere Lichter
+# 3D materials and lighting presets.
+	Material	Material
+	Highlight	Glanzlicht
+	Roughness	Rauheit
+	Metallic	Metallisch
+	Rim Light	Kantenlicht
+	Cel Bands	Cel-Stufen
+	Reflections	Spiegelungen
+	Outdoor	Im Freien
+	Sunset	Sonnenuntergang
+	Ambient Occlusion	Umgebungsverdeckung
+	Contact Shadow	Kontaktschatten
+	Straight	Gerade
+	From Light	Vom Licht
+	Smooth shading	Weiche Schattierung
+	Ambient Color	Umgebungslichtfarbe
+	Soft Touch	Soft-Touch
+	Plastic	Kunststoff
+	Metal	Metall
+	Chrome	Chrom
+	Rim Glow	Kantenglühen
+	Toon	Toon
+	Standard	Standard
+	Studio	Studio
+	Top Light	Oberlicht
+	Dramatic	Dramatisch
+	Warm & Cool	Warm & kalt
+3d	Matte	Matt

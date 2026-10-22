@@ -1,6 +1,6 @@
 # Effects parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (raster effects after a pattern, radial or freeform gradient fill export at their place and size, #1536; score unchanged; 3D and Materials on outlined type and other shapes of many small curves, #1481; Twist 0° to 360°, #1524; twisted walls keep their faces, #1525; score unchanged; 3D and Materials: Inflate takes Twist, Taper and Cap; score unchanged) · **Target:** Adobe Illustrator 2026 (30.x)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-22 · **Change:** minor (Inflate layer depths; Extrude layer depths; Rotate on groups; stacked Extrude layers; Inflate Pillow and nested layers; Materials… menu item; graphics finishes, graphics on Rotate and Revolve, holes in Revolve caps; 3D and Materials: Revolve caps and graphics on surfaces, ~42% → ~45%, 14–28 → 11–23 h; 3D: a draft live preview while dragging; 3D and Materials: procedural reflections (studio, outdoor, sunset, dark), ambient occlusion and contact shadows, gradients and patterns shaded per pixel, ~40% → ~42% (estimated); materials, lighting and material presets, smooth shading, ~32% → ~40% (estimated); coloured, soft lights and cast shadows, ~25% → ~32%; raster effects after a pattern, radial or freeform gradient fill export at their place and size, #1536; score unchanged; 3D and Materials on outlined type and other shapes of many small curves, #1481; Twist 0° to 360°, #1524; twisted walls keep their faces, #1525; score unchanged; 3D and Materials: Inflate takes Twist, Taper and Cap; score unchanged) · **Target:** Adobe Illustrator 2026 (30.x)
 
 Every entry of Illustrator's Effect menu, by its public feature name, against VectorCraft's effects catalogue
 (`effect_catalog()` in `crates/effects/src/lib.rs`) and the Effect menu built from it
@@ -13,7 +13,7 @@ Part of [target-app-parity.md](target-app-parity.md); open work is in [gaps.md](
 |---|---:|---:|---:|---:|
 | Illustrator effects (vector and stylize) | 50 | 44 | 88% | 6–10 |
 | Photoshop effects (raster, Effect Gallery) | 57 | 29 | 51% | 23–39 |
-| 3D and Materials | 4 (+3 Classic) | 4 (initial: Extrude & Bevel, Revolve, Inflate, Rotate) | ~25% | 25–45 |
+| 3D and Materials | 4 (+3 Classic) | 4 (initial: Extrude & Bevel, Revolve, Inflate, Rotate; lights, shadows, materials, presets, smooth shading, reflections, ambient occlusion, contact shadows, Revolve caps, graphics on the front) | ~45% | 11–23 |
 | Beyond Illustrator: Effect › Color Adjustments (6), effect plug-ins (WebAssembly) | — | 6 + plug-ins | — | — |
 
 ## Illustrator effects
@@ -84,22 +84,34 @@ not an accuracy guarantee for arbitrary artwork. Tests: `pixel::tests::film_grai
 
 | Item | Ours |
 |---|---|
-| Revolve | initial: live, editable profile, rotation and light gizmos, flat shading, SVG/PDF output, Expand Appearance ([revolve.md](revolve.md), #846) |
+| Revolve | initial: live, editable profile, solid or hollow caps, rotation and light gizmos, SVG/PDF output, Expand Appearance ([revolve.md](revolve.md), #846) |
 | Extrude & Bevel, Inflate, Rotate | initial: live, depth, twist, taper, solid or hollow caps, five original bevel shapes, Inflate volume, both sides, twist, taper and cap, Rotate of every fill and stroke, Position presets, rotation and light gizmos, SVG/PDF output, Expand Appearance ([three-d.md](three-d.md)) |
-| Materials panel, lighting, ray-traced render | one directional light with flat shading only; no materials, several lights, light colour, shadows or ray tracing |
+| Materials panel, lighting, ray-traced render | lighting: up to four directional lights with colour, intensity and softness, ambient colour, seven presets; shadows below or behind the object; our own materials (highlight, roughness, metallic, rim light, cel bands) with eight presets and smooth (gradient) shading ([three-d.md](three-d.md#materials)); graphics: the document's symbols laid on Extrude & Bevel, Inflate and Rotate and wrapped round Revolve, matte or in the surface's finish; no Substance materials, textures, graphics on sides and bevels or ray tracing |
 | 3D (Classic): Extrude & Bevel, Revolve, Rotate | none |
 | Turntable (30.0 beta) | none |
 | Export 3D objects (OBJ, USDA, glTF) | none |
 
 The `three-d` crate (depends only on `geom`) builds, rotates, projects, shades and depth-sorts the surfaces;
-the effects crate turns them into art. What's left (materials, several lights and shadows, ray-traced rendering,
-Revolve caps, 3D Classic, Turntable, 3D export) is 25–45 h.
+the effects crate turns them into art. What's left (Substance materials and textures, graphics on sides and bevels,
+ray-traced rendering, 3D Classic, Turntable, 3D export) is 11–23 h.
 
 ## Revision history
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-22 | patch | 3D and Materials: stacked Inflate layers take their own depth too, a raised step on walls under each puff ([three-d.md](three-d.md#inflate)); our own extension, score unchanged |
+| 2026-10-22 | patch | 3D and Materials: stacked Extrude & Bevel layers each take their own depth (Layer Depths, `layerDepths`) ([three-d.md](three-d.md)); our own extension, score unchanged |
+| 2026-10-19 | patch | 3D and Materials: Rotate works on a group too, turning its shapes as one sheet ([three-d.md](three-d.md#rotate)); our own extension, score unchanged |
+| 2026-10-19 | patch | 3D and Materials: Extrude & Bevel works on a group too, stacking its shapes as layered cut-outs ([three-d.md](three-d.md)); our own extension, score unchanged |
+| 2026-10-19 | patch | 3D and Materials: Inflate takes a Pillow option (a soft cushion: seam at the edge, level top, pinched corners) and works on a group, nesting its shapes as stacked cushions ([three-d.md](three-d.md#inflate)); our own extensions, score unchanged |
+| 2026-10-19 | patch | 3D and Materials: Effect › 3D and Materials › Materials… opens the 3D dialog on its Material tab, editing the applied 3D effect or adding a flat Rotate ([three-d.md](three-d.md#materials)); score unchanged |
+| 2026-10-18 | patch | 3D and Materials: graphics take a Matte finish of their own (or the surface's), go on Rotate and wrap round Revolve; Revolve's cut ends keep holes in the profile ([three-d.md](three-d.md#materials), [revolve.md](revolve.md)); score unchanged |
+| 2026-10-18 | minor | 3D and Materials: Revolve's Cap (solid for new effects) and symbols laid on the front of Extrude & Bevel and Inflate ([three-d.md](three-d.md#materials)); ~42% → ~45%, 14–28 → 11–23 h |
 | 2026-10-13 | minor | Raster effects (blur, shadow, glow, grain) drawn after a pattern, radial or freeform gradient fill export at their place and size (#1541, fixes #1536); scores unchanged (estimated) |
+| 2026-10-16 | patch | 3D and Materials: a draft live preview while a value is dragged (about 6× faster), and each 3D art shaded once per change; score unchanged |
+| 2026-10-15 | minor | 3D and Materials: procedural reflections (studio, outdoor, sunset, dark), ambient occlusion and contact shadows, gradients and patterns shaded per pixel ([three-d.md](three-d.md#materials)); ~40% → ~42%, 15–30 → 14–28 h (estimated) |
+| 2026-10-15 | minor | 3D and Materials: a Material tab (highlight, roughness, metallic, rim light, cel bands) with eight presets, seven lighting presets and an ambient colour, and smooth shading (per pixel: an image shaded over interpolated normals, clipped to the vector outline; Inflate's normals exact from its height field) ([three-d.md](three-d.md#materials)); ~32% → ~40%, 20–38 → 15–30 h (estimated) |
+| 2026-10-15 | minor | 3D and Materials: the main light takes a colour and a softness, up to three more lights, and a shadow below or behind the object with distance, opacity and softness ([three-d.md](three-d.md#lighting-and-shadows)); ~25% → ~32%, 25–45 → 20–38 h (estimated) |
 | 2026-10-13 | minor | 3D and Materials: outlined words and other shapes of many small curves take Rotate, Extrude & Bevel and Inflate (curves are sampled by a tolerance; Rotate takes up to 65,536 outline points; #1481); Extrude & Bevel's Twist runs 0° to 360° as the public panel reference gives it, a negative value drawing untwisted (#1524); a twisted extrusion keeps its walls, which were dropped from about 45° (#1525); details in [three-d.md](three-d.md); 3D stays ~25%, 25–45 h (estimated) |
 | 2026-10-13 | minor | Inflate takes Twist, Taper and Cap ([three-d.md](three-d.md)); 3D stays ~25%, 25–45 h: materials, lights and shadows are the bulk of what remains |
 | 2026-10-12 | minor | Extrude & Bevel, Inflate and Rotate (initial, [three-d.md](three-d.md)); 3D ~8% → ~25%, 45–75 → 25–45 h |

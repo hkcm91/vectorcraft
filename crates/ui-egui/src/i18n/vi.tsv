@@ -3540,6 +3540,11 @@
 	Viewing Distance:	Khoảng cách nhìn:
 	Visibility	Hiển thị
 	Volume	Thể tích
+	Pillow	Gối
+	Layer Depths	Độ sâu lớp
+	Layer {n} (bottom)	Lớp {n} (dưới cùng)
+	Layer {n}	Lớp {n}
+	Use Depth for All	Dùng độ sâu cho tất cả
 	W:	W:
 	Warnings	Cảnh báo
 	Warp	Biến dạng
@@ -3632,6 +3637,7 @@ imageTrace	Outline	Đường viền
 3d	Bevel	Vát cạnh
 3d	Cap	Nắp
 3d	Hollow	Rỗng
+3d	Surface	Bề mặt
 3d	Rounded	Bo tròn
 3d	Solid	Đặc
 3d	Space	Khoảng cách
@@ -4298,3 +4304,89 @@ theme	Appearance	Giao diện
 @msg	{tool} isn't in a toolbar group of several tools	{tool} không nằm trong nhóm thanh công cụ có nhiều công cụ
 	Load EPS into Clipboard	Tải EPS vào bảng tạm
 @msg	an image of {w} × {h} pixels is too large to draw	ảnh {w} × {h} điểm ảnh quá lớn nên không thể vẽ
+# Arch tool and its options (a VectorCraft addition).
+	Arch	Vòm
+	Arch Tool	Công cụ Vòm
+	Arch Tool Options	Tùy chọn Công cụ Vòm
+	Arch Count:	Số vòm:
+	Thickness:	Độ dày:
+	Segments:	Số đoạn:
+	Close into Rings	Khép thành vòng
+	Color Palette	Bảng màu
+	Add Color	Thêm màu
+	Remove Color	Xóa màu
+	Shuffle Colors	Xáo trộn màu
+	Fill Style	Kiểu tô
+	Wide	Rộng
+	Pointed	Nhọn
+	Scallop	Răng cưa tròn
+	Wavy	Gợn sóng
+	Segmented	Chia đoạn
+	Flat	Phẳng
+	Glossy	Bóng
+	Jelly	Thạch
+	Muted	Dịu
+	Pearlescent	Ngọc trai
+	Classic Rainbow	Cầu vồng cổ điển
+	Candy Arch	Vòm kẹo
+	Double Arch	Vòm đôi
+	Scallop Gate	Cổng răng cưa
+	Dream Tunnel	Đường hầm mơ
+	Wavy Arch	Vòm gợn sóng
+# Dimension tool and its options.
+	Dimension	Kích thước
+	Dimension Tool	Công cụ Kích thước
+	Dimension Tool Options	Tùy chọn Công cụ Kích thước
+	Linear	Tuyến tính
+	Angular	Góc
+	Aligned	Thẳng hàng
+	Precision:	Độ chính xác:
+	Ends:	Đầu mút:
+	Arrow	Mũi tên
+	Tick	Vạch
+	Dot	Chấm
+	Line Weight:	Độ dày nét:
+	Font Size:	Cỡ phông:
+	Show Units	Hiện đơn vị
+# 3D lighting and shadows.
+	Light Source	Nguồn sáng
+	Softness	Độ mềm
+	Shadows	Bóng đổ
+	Below Object	Dưới đối tượng
+	Behind Object	Sau đối tượng
+	Distance	Khoảng cách
+	Delete Light	Xóa đèn
+	Add Light	Thêm đèn
+	Add Graphic	Thêm đồ họa
+	Finish	Hoàn thiện
+	Delete Graphic	Xóa đồ họa
+	Make a symbol to lay it on the surface.	Tạo một biểu tượng để đặt nó lên bề mặt.
+	More Lights	Thêm đèn khác
+# 3D materials and lighting presets.
+	Material	Chất liệu
+	Highlight	Điểm sáng
+	Roughness	Độ nhám
+	Metallic	Độ kim loại
+	Rim Light	Đèn viền
+	Cel Bands	Dải màu cel
+	Reflections	Phản chiếu
+	Outdoor	Ngoài trời
+	Sunset	Hoàng hôn
+	Ambient Occlusion	Che khuất môi trường
+	Contact Shadow	Bóng tiếp xúc
+	Straight	Thẳng
+	From Light	Theo nguồn sáng
+	Smooth shading	Tô bóng mượt
+	Ambient Color	Màu ánh sáng môi trường
+	Soft Touch	Mềm mại
+	Plastic	Nhựa
+	Metal	Kim loại
+	Chrome	Crôm
+	Rim Glow	Viền phát sáng
+	Toon	Hoạt hình
+	Standard	Tiêu chuẩn
+	Studio	Studio
+	Top Light	Đèn từ trên
+	Dramatic	Kịch tính
+	Warm & Cool	Ấm và lạnh
+3d	Matte	Mờ
